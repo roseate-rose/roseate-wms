@@ -8,7 +8,7 @@ import sys
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
@@ -28,6 +28,9 @@ from backend.models import (
     User,
 )
 from backend.services.import_service import classify_expiry_status, import_from_csv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
 
 
 def api_response(code=200, data=None, msg="success"):
@@ -318,6 +321,15 @@ def build_export_rows():
     return rows
 
 
+def resolve_frontend_dist_dir(config=None):
+    configured_path = None
+    if config:
+        configured_path = config.get("FRONTEND_DIST_DIR")
+
+    configured_path = configured_path or os.getenv("FRONTEND_DIST_DIR")
+    return str(Path(configured_path or DEFAULT_FRONTEND_DIST_DIR).resolve())
+
+
 def create_app(config=None):
     app = Flask(__name__)
     app.config.update(
@@ -328,6 +340,7 @@ def create_app(config=None):
         DEFAULT_ADMIN_USERNAME=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"),
         DEFAULT_ADMIN_PASSWORD=os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123456"),
         DEFAULT_ADMIN_ROLE=os.getenv("DEFAULT_ADMIN_ROLE", "admin"),
+        FRONTEND_DIST_DIR=resolve_frontend_dist_dir(config),
     )
 
     if config:
@@ -893,6 +906,26 @@ def register_routes(app):
         db.session.commit()
 
         return api_response(code=201, data={"mapping": mapping.to_dict()})
+
+    @app.get("/", defaults={"path": ""})
+    @app.get("/<path:path>")
+    def serve_frontend(path):
+        if path.startswith("api/"):
+            return api_response(code=404, msg="resource not found")
+
+        frontend_dist_dir = Path(app.config["FRONTEND_DIST_DIR"])
+        if not frontend_dist_dir.exists():
+            return api_response(code=404, msg="frontend dist not found")
+
+        if path:
+            requested_file = frontend_dist_dir / path
+            if requested_file.is_file():
+                return send_from_directory(frontend_dist_dir, path)
+
+            if Path(path).suffix:
+                return api_response(code=404, msg="static asset not found")
+
+        return send_from_directory(frontend_dist_dir, "index.html")
 
 
 app = create_app()

@@ -94,3 +94,8 @@
 - Why: Stage 5 introduces a runtime-only dependency path (`pandas`/`openpyxl`) that the existing pytest suite did not exercise on the happy path, so a compile-only check would be insufficient.
 - How: Installed the backend requirements from `backend/requirements.txt`, re-ran `python3 -m pytest backend/tests`, re-ran `npm run build` in `frontend/`, and executed a Flask test-client script that logged in as admin and requested `/api/v1/reports/export?format=csv` plus `format=xlsx`.
 - Result: Backend tests pass with `15 passed`, the frontend production build passes, and the export endpoint now returns valid CSV and XLSX attachments for an admin user.
+
+## 2026-03-09 Docker Packaging & Static Serving
+- Why: The project needed a production-ready container path that builds Vue separately, runs Flask under Gunicorn, and serves the compiled H5/Web frontend from the same process.
+- How: Added a root `Dockerfile` with frontend build, backend dependency install, and runtime stages; added `.dockerignore`; updated `backend/app.py` to serve `frontend/dist` with SPA history fallback while preserving JSON 404s for unknown `/api/...` requests; and added backend tests that exercise index serving, asset serving, and missing-route behavior.
+- Result: The repository now contains a container build path that packages both apps together and a backend path capable of serving the built frontend bundle directly. Verification passed with `python3 -m pytest backend/tests` (`17 passed`) and `npm run build`; an actual `docker build` could not be executed here because the local environment does not have the `docker` CLI installed.

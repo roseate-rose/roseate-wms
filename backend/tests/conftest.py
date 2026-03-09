@@ -5,7 +5,16 @@ from backend.extensions import db
 
 
 @pytest.fixture
-def app():
+def app(tmp_path):
+    frontend_dist_dir = tmp_path / "frontend-dist"
+    assets_dir = frontend_dist_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    (frontend_dist_dir / "index.html").write_text(
+        "<!doctype html><html><body><div id='app'>Roseate WMS Test</div></body></html>",
+        encoding="utf-8",
+    )
+    (assets_dir / "app.js").write_text("console.log('roseate-wms-test');", encoding="utf-8")
+
     app = create_app(
         {
             "TESTING": True,
@@ -14,6 +23,7 @@ def app():
             "DEFAULT_ADMIN_USERNAME": "admin",
             "DEFAULT_ADMIN_PASSWORD": "password123",
             "DEFAULT_ADMIN_ROLE": "admin",
+            "FRONTEND_DIST_DIR": str(frontend_dist_dir),
         }
     )
 

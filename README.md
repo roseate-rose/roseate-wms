@@ -241,6 +241,34 @@ npm run dev
 
 开发环境下，Vite 会将 `/api` 代理到 `http://127.0.0.1:5000`。
 
+## Docker 部署
+
+项目根目录下提供了多阶段构建的 `Dockerfile`：
+
+- 第一阶段在 `frontend/` 执行 `npm install` 和 `npm run build`
+- 第二阶段在 `backend/` 安装 Python 依赖
+- 最终运行阶段仅保留后端代码、已安装依赖和 `frontend/dist`
+- 运行入口为 `gunicorn --bind 0.0.0.0:5000 backend.app:app`
+
+### 构建镜像
+
+```bash
+docker build -t roseate-wms .
+```
+
+### 运行容器
+
+```bash
+docker run --rm -p 5000:5000 -v "$(pwd)/instance:/app/instance" roseate-wms
+```
+
+说明：
+
+- Flask 会直接从容器内的 `frontend/dist` 提供静态资源
+- Vue Router 的 History 路由会回退到 `index.html`
+- `/api/...` 仍由 Flask API 处理，未知接口保持 JSON `404`
+- SQLite 默认写入容器内 `/app/instance/roseate_wms.db`，建议挂载卷持久化
+
 ## 注意事项
 - 当前项目仍未接入数据库迁移工具；如果你本地沿用旧版 SQLite 文件，新增字段不会自动补齐。开发中遇到旧 schema 冲突时，删除本地 `instance/roseate_wms.db` 后重新启动即可。
 - CSV 导入假设商品档案已存在；导入阶段不会自动创建商品。

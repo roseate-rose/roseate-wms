@@ -1,29 +1,20 @@
-# Stage 5 Todo
+# Docker Packaging Todo
 
 ## Scope
-- [x] Add persistent order, order allocation, and inventory transaction models for the order lifecycle
-- [x] Add pytest coverage for external order sync, admin-only export access, and fulfill stock deduction
-- [x] Implement reusable role decorators including `admin_required`
-- [x] Implement `POST /api/v1/orders/sync` using `channel_name + external_sku_id -> hb_code -> FIFO reserve`
-- [x] Implement `POST /api/v1/orders/fulfill` to convert reserved stock into OUT transactions and deduct on-hand stock
-- [x] Implement `GET /api/v1/orders` for frontend order status display
-- [x] Implement `GET /api/v1/reports/export` with CSV/XLSX export support
-- [x] Restrict import/export and other admin-only write actions via RBAC
-- [x] Persist user role in frontend auth state and use it for UI gating
-- [x] Add orders page with sync/fulfill visibility and status display
-- [x] Add report download UI and admin-only quick mapping flow from unknown scan result
-- [x] Add hidden-by-role sidebar items for `财务统计` and `用户设置`
-- [x] Synchronize `README.md`, `tasks/devlog.md`, and this file with verification evidence
+- [x] Inspect current Flask app and determine how built Vue assets should be served in production
+- [x] Add a multi-stage Dockerfile that builds the frontend, installs backend dependencies, and runs Flask with Gunicorn
+- [x] Ensure the backend serves `frontend/dist` static assets and SPA history fallback correctly
+- [x] Add targeted backend tests for built asset serving and missing API/static 404 behavior
+- [x] Synchronize `README.md`, `tasks/devlog.md`, and this file with container runtime guidance
+- [x] Verify pytest and frontend build still pass after the packaging changes
 
 ## Implementation Notes
-- Orders must carry a real persisted status, at minimum `reserved` and `fulfilled`.
-- Fulfillment must reduce both `current_quantity` and `reserved_quantity` by the same allocated amount.
-- Export endpoint should support `format=csv|xlsx`; non-admin users must be rejected before performing heavy export work.
-- UI role checks are only presentation controls; server-side RBAC remains authoritative.
-- Unknown barcode mapping in H5 flow should only be exposed to admin users.
+- The runtime image should contain only Python, backend code, and the compiled `frontend/dist` bundle.
+- Vue history routing needs an `index.html` fallback for non-API paths, while `/api/...` misses must remain JSON 404 responses.
+- Missing hashed/static asset paths should return 404 instead of incorrectly falling back to `index.html`.
 
 ## Review / Summary
-- [x] Order lifecycle and RBAC verified with `python3 -m pytest backend/tests` (`15 passed`)
-- [x] Frontend role-aware navigation and order/export views verified with `npm run build`
-- [x] Admin export path verified with Flask test client for both `format=csv` and `format=xlsx`
-- [x] README and task logs updated for Stage 5 handoff
+- [x] Docker packaging changes verified with `python3 -m pytest backend/tests` (`17 passed`)
+- [x] Docker packaging changes verified with `npm run build`
+- [x] README and dev log updated with build/run instructions
+- [x] Docker CLI availability checked; local `docker build` was not run because `docker` is not installed in this environment

@@ -43,3 +43,26 @@ def test_app_bootstraps_default_admin(app):
         assert user is not None
         assert user.role == "admin"
         assert user.check_password("password123")
+
+
+def test_flask_serves_built_frontend_assets(client):
+    index_response = client.get("/")
+    spa_response = client.get("/products/HB1001")
+    asset_response = client.get("/assets/app.js")
+
+    assert index_response.status_code == 200
+    assert b"Roseate WMS Test" in index_response.data
+    assert spa_response.status_code == 200
+    assert b"Roseate WMS Test" in spa_response.data
+    assert asset_response.status_code == 200
+    assert b"roseate-wms-test" in asset_response.data
+
+
+def test_unknown_api_and_missing_asset_return_404(client):
+    missing_api_response = client.get("/api/v1/unknown")
+    missing_asset_response = client.get("/assets/missing.js")
+
+    assert missing_api_response.status_code == 404
+    assert missing_api_response.get_json()["msg"] == "resource not found"
+    assert missing_asset_response.status_code == 404
+    assert missing_asset_response.get_json()["msg"] == "static asset not found"
