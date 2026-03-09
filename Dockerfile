@@ -34,6 +34,6 @@ COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 RUN mkdir -p /app/instance
 
-EXPOSE 5000
+EXPOSE 8000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "backend.app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "backend.app:app"]

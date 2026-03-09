@@ -248,7 +248,7 @@ npm run dev
 - 第一阶段在 `frontend/` 执行 `npm install` 和 `npm run build`
 - 第二阶段在 `backend/` 安装 Python 依赖
 - 最终运行阶段仅保留后端代码、已安装依赖和 `frontend/dist`
-- 运行入口为 `gunicorn --bind 0.0.0.0:5000 backend.app:app`
+- 运行入口为 `gunicorn --bind 0.0.0.0:8000 backend.app:app`
 
 ### 构建镜像
 
@@ -259,7 +259,7 @@ docker build -t roseate-wms .
 ### 运行容器
 
 ```bash
-docker run --rm -p 5000:5000 -v "$(pwd)/instance:/app/instance" roseate-wms
+docker run --rm -p 8000:8000 -v "$(pwd)/instance:/app/instance" roseate-wms
 ```
 
 说明：
@@ -268,6 +268,43 @@ docker run --rm -p 5000:5000 -v "$(pwd)/instance:/app/instance" roseate-wms
 - Vue Router 的 History 路由会回退到 `index.html`
 - `/api/...` 仍由 Flask API 处理，未知接口保持 JSON `404`
 - SQLite 默认写入容器内 `/app/instance/roseate_wms.db`，建议挂载卷持久化
+
+## Fly.io 部署
+
+仓库根目录提供了 [fly.toml](/Users/paul/Work/roseate-wms/fly.toml)：
+
+- 应用名：`roseate-wms`
+- 容器内部服务端口：`8000`
+- 挂载卷：`roseate_storage -> /app/instance`
+- 环境变量：`DATABASE_URL=sqlite:////app/instance/wms.db`
+
+Fly 部署前需要先创建持久化卷，例如：
+
+```bash
+fly volumes create roseate_storage --size 1
+fly deploy
+```
+
+也可以直接使用根目录脚本：
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+脚本会：
+
+- 检查 `flyctl` 是否可用
+- 检查 `roseate_storage` 是否已存在，不存在时自动创建
+- 执行 `flyctl deploy --app roseate-wms`
+
+JWT 密钥需要单独通过 Fly secrets 配置，例如：
+
+```bash
+flyctl secrets set JWT_SECRET_KEY='replace-with-a-long-random-secret' --app roseate-wms
+```
+
+建议使用长度至少 32 字节的随机值。
 
 ## 注意事项
 - 当前项目仍未接入数据库迁移工具；如果你本地沿用旧版 SQLite 文件，新增字段不会自动补齐。开发中遇到旧 schema 冲突时，删除本地 `instance/roseate_wms.db` 后重新启动即可。

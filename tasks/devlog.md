@@ -99,3 +99,13 @@
 - Why: The project needed a production-ready container path that builds Vue separately, runs Flask under Gunicorn, and serves the compiled H5/Web frontend from the same process.
 - How: Added a root `Dockerfile` with frontend build, backend dependency install, and runtime stages; added `.dockerignore`; updated `backend/app.py` to serve `frontend/dist` with SPA history fallback while preserving JSON 404s for unknown `/api/...` requests; and added backend tests that exercise index serving, asset serving, and missing-route behavior.
 - Result: The repository now contains a container build path that packages both apps together and a backend path capable of serving the built frontend bundle directly. Verification passed with `python3 -m pytest backend/tests` (`17 passed`) and `npm run build`; an actual `docker build` could not be executed here because the local environment does not have the `docker` CLI installed.
+
+## 2026-03-09 Fly.io Deployment Config
+- Why: Fly.io deployment needs an explicit app definition, persistent SQLite mount, and a runtime port that matches the container listener; otherwise deployment would come up unhealthy.
+- How: Added `fly.toml` with app name `roseate-wms`, `roseate_storage` mounted at `/app/instance`, and `DATABASE_URL=sqlite:////app/instance/wms.db`. Updated `Dockerfile` so Gunicorn binds to `0.0.0.0:8000` and exposed port `8000`, then documented the Fly workflow in `README.md`.
+- Result: The repo now contains a coherent Fly.io deployment config where the declared internal service port matches the Gunicorn listener and SQLite points at the mounted persistent volume.
+
+## 2026-03-09 Fly.io Deploy Script
+- Why: Repeating the Fly volume bootstrap and deploy commands manually is error-prone, and JWT secret setup needs to be called out explicitly so deployment is not left with a weak default.
+- How: Added a root `deploy.sh` that checks for `flyctl`, ensures the `roseate_storage` volume exists for `roseate-wms`, and then runs `flyctl deploy`. Updated `README.md` with script usage and the required `flyctl secrets set JWT_SECRET_KEY=...` command.
+- Result: The repository now includes a minimal deployment helper for Fly.io plus explicit operator guidance for configuring the JWT secret outside the repo.
