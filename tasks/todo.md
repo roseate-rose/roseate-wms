@@ -1,30 +1,29 @@
-# Stage 2 Todo
+# Stage 5 Todo
 
 ## Scope
-- [x] Extend backend models with `Product` and `Batch`, both preserving `extra_data`
-- [x] Add model helpers for JSON payloads, stock aggregation, and date serialization
-- [x] Write pytest coverage for product creation, inbound batch creation, and same-expiry merge behavior
-- [x] Implement `GET /api/v1/products` with fuzzy search and total stock aggregation
-- [x] Implement `POST /api/v1/products` for product archive creation
-- [x] Implement `POST /api/v1/inventory/inbound` for inbound stock merge/create behavior
-- [x] Build a product center page showing product info and computed total stock
-- [x] Build an H5-first inbound flow: scan/input barcode, resolve product, then submit batch data
-- [x] Update routing and navigation to expose the product center cleanly
+- [x] Add persistent order, order allocation, and inventory transaction models for the order lifecycle
+- [x] Add pytest coverage for external order sync, admin-only export access, and fulfill stock deduction
+- [x] Implement reusable role decorators including `admin_required`
+- [x] Implement `POST /api/v1/orders/sync` using `channel_name + external_sku_id -> hb_code -> FIFO reserve`
+- [x] Implement `POST /api/v1/orders/fulfill` to convert reserved stock into OUT transactions and deduct on-hand stock
+- [x] Implement `GET /api/v1/orders` for frontend order status display
+- [x] Implement `GET /api/v1/reports/export` with CSV/XLSX export support
+- [x] Restrict import/export and other admin-only write actions via RBAC
+- [x] Persist user role in frontend auth state and use it for UI gating
+- [x] Add orders page with sync/fulfill visibility and status display
+- [x] Add report download UI and admin-only quick mapping flow from unknown scan result
+- [x] Add hidden-by-role sidebar items for `财务统计` and `用户设置`
 - [x] Synchronize `README.md`, `tasks/devlog.md`, and this file with verification evidence
 
 ## Implementation Notes
-- Product stock must always be derived from batches where `current_quantity > 0`; do not persist a product-level stock field.
-- `Batch` merge behavior for inbound follows `hb_code + expiry_date` as the inventory consolidation key.
-- All tables keep `extra_data` as a JSON-compatible `Text` field to satisfy the “only add fields” rule.
-- APIs continue using the unified response format `{ "code": ..., "data": ..., "msg": ... }`.
-- Prefer secure default behavior: product and inventory APIs should require JWT authentication.
+- Orders must carry a real persisted status, at minimum `reserved` and `fulfilled`.
+- Fulfillment must reduce both `current_quantity` and `reserved_quantity` by the same allocated amount.
+- Export endpoint should support `format=csv|xlsx`; non-admin users must be rejected before performing heavy export work.
+- UI role checks are only presentation controls; server-side RBAC remains authoritative.
+- Unknown barcode mapping in H5 flow should only be exposed to admin users.
 
 ## Review / Summary
-- [x] Model and API behavior verified with pytest
-- [x] Frontend route changes and responsive UI verified with Vite build
-- [x] README and task logs updated for Stage 2 handoff
-
-### Delivery Notes
-- Backend now includes `Product` and `Batch` entities with JSON-compatible `extra_data`, relationship-based stock aggregation, and inbound merge logic keyed by `hb_code + expiry_date`.
-- Product APIs support archive creation and fuzzy retrieval; inbound API resolves products by `hb_code` or `barcode` and either merges or creates a batch.
-- Frontend now exposes a product center and an H5-first inbound workflow, both wired to the Stage 2 backend APIs.
+- [x] Order lifecycle and RBAC verified with `python3 -m pytest backend/tests` (`15 passed`)
+- [x] Frontend role-aware navigation and order/export views verified with `npm run build`
+- [x] Admin export path verified with Flask test client for both `format=csv` and `format=xlsx`
+- [x] README and task logs updated for Stage 5 handoff

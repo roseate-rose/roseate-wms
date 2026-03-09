@@ -20,6 +20,9 @@ const productForm = reactive({
   name: "",
   spec: "",
   unit: "",
+  base_unit: "",
+  purchase_unit: "",
+  conversion_rate: 1,
   extra_data_text: "",
 });
 
@@ -55,6 +58,9 @@ function resetForm() {
   productForm.name = "";
   productForm.spec = "";
   productForm.unit = "";
+  productForm.base_unit = "";
+  productForm.purchase_unit = "";
+  productForm.conversion_rate = 1;
   productForm.extra_data_text = "";
   jsonError.value = "";
 }
@@ -82,6 +88,9 @@ async function createProduct() {
       name: productForm.name.trim(),
       spec: productForm.spec.trim(),
       unit: productForm.unit.trim(),
+      base_unit: productForm.base_unit.trim(),
+      purchase_unit: productForm.purchase_unit.trim(),
+      conversion_rate: Number(productForm.conversion_rate),
       extra_data: extraData,
     });
 
@@ -196,6 +205,34 @@ watch(
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
             />
           </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">最小售卖单位</span>
+            <input
+              v-model="productForm.base_unit"
+              type="text"
+              required
+              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+            />
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">采购单位</span>
+            <input
+              v-model="productForm.purchase_unit"
+              type="text"
+              required
+              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+            />
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">换算率</span>
+            <input
+              v-model="productForm.conversion_rate"
+              type="number"
+              min="1"
+              required
+              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+            />
+          </label>
         </div>
 
         <label class="block">
@@ -250,7 +287,9 @@ watch(
                 <th class="px-6 py-4">商品</th>
                 <th class="px-6 py-4">规格</th>
                 <th class="px-6 py-4">单位</th>
+                <th class="px-6 py-4">可售库存</th>
                 <th class="px-6 py-4">总库存</th>
+                <th class="px-6 py-4">操作</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
@@ -259,11 +298,20 @@ watch(
                 <td class="px-6 py-4">{{ item.barcode || "-" }}</td>
                 <td class="px-6 py-4">{{ item.name }}</td>
                 <td class="px-6 py-4">{{ item.spec }}</td>
-                <td class="px-6 py-4">{{ item.unit }}</td>
+                <td class="px-6 py-4">{{ item.base_unit }} / {{ item.purchase_unit }}</td>
+                <td class="px-6 py-4">{{ item.sellable_stock }}</td>
                 <td class="px-6 py-4">
                   <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
                     {{ item.total_stock }}
                   </span>
+                </td>
+                <td class="px-6 py-4">
+                  <RouterLink
+                    :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
+                    class="text-sm font-medium text-brand-dark hover:text-brand"
+                  >
+                    查看详情
+                  </RouterLink>
                 </td>
               </tr>
             </tbody>
@@ -282,7 +330,7 @@ watch(
                 <p class="mt-1 text-xs text-slate-500">{{ item.hb_code }} · {{ item.barcode || "无条码" }}</p>
               </div>
               <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
-                库存 {{ item.total_stock }}
+                可售 {{ item.sellable_stock }}
               </span>
             </div>
             <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -292,9 +340,19 @@ watch(
               </div>
               <div>
                 <p class="text-slate-500">单位</p>
-                <p class="font-medium text-slate-800">{{ item.unit }}</p>
+                <p class="font-medium text-slate-800">{{ item.base_unit }} / {{ item.purchase_unit }}</p>
+              </div>
+              <div>
+                <p class="text-slate-500">总库存</p>
+                <p class="font-medium text-slate-800">{{ item.total_stock }}</p>
               </div>
             </div>
+            <RouterLink
+              :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
+              class="mt-4 inline-flex text-sm font-medium text-brand-dark"
+            >
+              查看详情
+            </RouterLink>
           </article>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import http, { TOKEN_KEY } from "../api/http";
+import { setStoredUser } from "../auth/session";
 
 const route = useRoute();
 const router = useRouter();
@@ -21,6 +22,7 @@ async function submitLogin() {
   try {
     const { data } = await http.post("/auth/login", form);
     localStorage.setItem(TOKEN_KEY, data.data.token);
+    setStoredUser(data.data.user);
 
     await router.replace(route.query.redirect || "/");
   } catch (error) {

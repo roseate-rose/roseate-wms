@@ -3,8 +3,11 @@ import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import http from "../api/http";
+import { getStoredRole } from "../auth/session";
 
 const router = useRouter();
+const role = getStoredRole();
+const isAdmin = role === "admin";
 
 const lookupCode = ref("");
 const lookupLoading = ref(false);
@@ -13,6 +16,11 @@ const lookupError = ref("");
 const selectedProduct = ref(null);
 const inboundLoading = ref(false);
 const inboundSuccess = ref("");
+const showQuickMapping = ref(false);
+const quickMapping = reactive({
+  channel_name: "抖音",
+  hb_code: "",
+});
 
 const batchForm = reactive({
   batch_no: "",
@@ -20,6 +28,7 @@ const batchForm = reactive({
   expiry_date: "",
   quantity: 1,
   cost: "",
+  unit_type: "base",
 });
 
 const currentStep = computed(() => {
@@ -30,12 +39,23 @@ const currentStep = computed(() => {
   return lookupCode.value.trim() ? 2 : 1;
 });
 
+const quantityUnitLabel = computed(() => {
+  if (!selectedProduct.value) {
+    return batchForm.unit_type === "purchase" ? "采购单位" : "最小单位";
+  }
+
+  return batchForm.unit_type === "purchase"
+    ? selectedProduct.value.purchase_unit
+    : selectedProduct.value.base_unit;
+});
+
 async function resolveProduct() {
   const code = lookupCode.value.trim();
   lookupError.value = "";
   lookupMessage.value = "";
   inboundSuccess.value = "";
   selectedProduct.value = null;
+  showQuickMapping.value = false;
 
   if (!code) {
     lookupError.value = "请先输入条码或内部编码";
@@ -85,16 +105,18 @@ async function submitInbound() {
       expiry_date: batchForm.expiry_date,
       quantity: Number(batchForm.quantity),
       cost: Number(batchForm.cost),
+      unit_type: batchForm.unit_type,
     };
     const { data } = await http.post("/inventory/inbound", payload);
 
-    inboundSuccess.value = `入库成功：${data.data.action === "merged" ? "已合并现有批次" : "已创建新批次"}，当前总库存 ${data.data.product.total_stock}`;
+    inboundSuccess.value = `入库成功：${data.data.action === "merged" ? "已合并现有批次" : "已创建新批次"}，按${selectedProduct.value.base_unit}计共入 ${data.data.normalized_quantity}，当前总库存 ${data.data.product.total_stock}`;
     selectedProduct.value = data.data.product;
     batchForm.batch_no = "";
     batchForm.production_date = "";
     batchForm.expiry_date = "";
     batchForm.quantity = 1;
     batchForm.cost = "";
+    batchForm.unit_type = "base";
   } catch (error) {
     lookupError.value = error.response?.data?.msg || "入库失败";
   } finally {
@@ -107,6 +129,24 @@ function goToCreateProduct() {
     name: "products",
     query: { create: "1", barcode: lookupCode.value.trim() },
   });
+}
+
+async function createQuickMapping() {
+  lookupError.value = "";
+  lookupMessage.value = "";
+
+  try {
+    await http.post("/channel-mappings", {
+      channel_name: quickMapping.channel_name.trim(),
+      external_sku_id: lookupCode.value.trim(),
+      hb_code: quickMapping.hb_code.trim(),
+    });
+    lookupMessage.value = "映射创建成功，可继续在渠道订单中使用该外部编码。";
+    showQuickMapping.value = false;
+    quickMapping.hb_code = "";
+  } catch (error) {
+    lookupError.value = error.response?.data?.msg || "映射创建失败";
+  }
 }
 </script>
 
@@ -136,14 +176,14 @@ function goToCreateProduct() {
           :class="currentStep >= 2 ? 'border-brand bg-brand-soft/50' : 'border-slate-200 bg-slate-50'"
         >
           <p class="text-sm font-semibold text-slate-900">2. 识别商品</p>
-          <p class="mt-1 text-xs text-slate-500">不存在则先进入商品中心建档。</p>
+          <p class="mt-1 text-xs text-slate-500">不存在则可建档，管理员可直接建立映射。</p>
         </div>
         <div
           class="rounded-2xl border px-4 py-3"
           :class="currentStep >= 3 ? 'border-brand bg-brand-soft/50' : 'border-slate-200 bg-slate-50'"
         >
           <p class="text-sm font-semibold text-slate-900">3. 批次入库</p>
-          <p class="mt-1 text-xs text-slate-500">必填到期日、数量和成本。</p>
+          <p class="mt-1 text-xs text-slate-500">支持采购单位与最小单位换算入库。</p>
         </div>
       </div>
     </div>
@@ -194,24 +234,61 @@ function goToCreateProduct() {
               <p class="text-base font-semibold text-slate-900">{{ selectedProduct.hb_code }}</p>
             </div>
             <div>
-              <p class="text-sm text-slate-500">条码</p>
-              <p class="text-base font-semibold text-slate-900">{{ selectedProduct.barcode || "-" }}</p>
+              <p class="text-sm text-slate-500">单位体系</p>
+              <p class="text-base font-semibold text-slate-900">
+                {{ selectedProduct.purchase_unit }} = {{ selectedProduct.conversion_rate }} {{ selectedProduct.base_unit }}
+              </p>
             </div>
             <div>
-              <p class="text-sm text-slate-500">当前总库存</p>
-              <p class="text-base font-semibold text-slate-900">{{ selectedProduct.total_stock }}</p>
+              <p class="text-sm text-slate-500">当前可售库存</p>
+              <p class="text-base font-semibold text-slate-900">{{ selectedProduct.sellable_stock }}</p>
             </div>
           </div>
         </div>
 
-        <div v-else-if="lookupCode.trim() && !lookupLoading && lookupMessage" class="mt-4">
-          <button
-            type="button"
-            class="rounded-2xl border border-brand/20 px-4 py-3 text-sm font-medium text-brand-dark transition hover:bg-brand-soft"
-            @click="goToCreateProduct"
-          >
-            前往商品中心建档
-          </button>
+        <div v-else-if="lookupCode.trim() && !lookupLoading && lookupMessage" class="mt-4 space-y-3">
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-2xl border border-brand/20 px-4 py-3 text-sm font-medium text-brand-dark transition hover:bg-brand-soft"
+              @click="goToCreateProduct"
+            >
+              前往商品中心建档
+            </button>
+            <button
+              v-if="isAdmin"
+              type="button"
+              class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+              @click="showQuickMapping = !showQuickMapping"
+            >
+              {{ showQuickMapping ? "收起映射" : "映射" }}
+            </button>
+          </div>
+
+          <div v-if="showQuickMapping" class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-sm font-semibold text-slate-900">未知扫码快速映射</p>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <input
+                v-model="quickMapping.channel_name"
+                type="text"
+                class="rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+                placeholder="渠道名称"
+              />
+              <input
+                v-model="quickMapping.hb_code"
+                type="text"
+                class="rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+                placeholder="绑定到 HB 编码"
+              />
+            </div>
+            <button
+              type="button"
+              class="mt-3 rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white"
+              @click="createQuickMapping"
+            >
+              保存映射
+            </button>
+          </div>
         </div>
       </article>
 
@@ -228,6 +305,17 @@ function goToCreateProduct() {
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
               placeholder="LOT-20260309"
             />
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">数量单位</span>
+            <select
+              v-model="batchForm.unit_type"
+              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+            >
+              <option value="base">最小单位</option>
+              <option value="purchase">采购单位</option>
+            </select>
           </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -252,7 +340,7 @@ function goToCreateProduct() {
 
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
-              <span class="mb-2 block text-sm font-medium text-slate-700">入库数量</span>
+              <span class="mb-2 block text-sm font-medium text-slate-700">入库数量（{{ quantityUnitLabel }}）</span>
               <input
                 v-model="batchForm.quantity"
                 type="number"

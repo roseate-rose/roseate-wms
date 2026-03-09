@@ -21,8 +21,15 @@ def app():
         db.drop_all()
         db.create_all()
         from backend.app import ensure_default_admin
+        from backend.models import User
 
         ensure_default_admin(app)
+
+        staff_user = User(username="staff", role="staff")
+        staff_user.set_password("staff123")
+        staff_user.set_extra_data({"seeded": True})
+        db.session.add(staff_user)
+        db.session.commit()
 
         yield app
 
@@ -40,6 +47,17 @@ def auth_headers(client):
     response = client.post(
         "/api/v1/auth/login",
         json={"username": "admin", "password": "password123"},
+    )
+
+    token = response.get_json()["data"]["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def staff_auth_headers(client):
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "staff", "password": "staff123"},
     )
 
     token = response.get_json()["data"]["token"]

@@ -34,3 +34,63 @@
 - Why: Stage 2 needs a clear handoff baseline so later stages can build on the exact batch model, API contract, and UI entry points without re-discovering context.
 - How: Ran the full backend test suite and frontend production build, then updated `README.md` and `tasks/todo.md` to reflect the new product center, inbound workflow, and batch merge behavior.
 - Result: `python3 -m pytest backend/tests` passes with 6 tests, `npm run build` passes, and project documentation now reflects the Stage 2 system state.
+
+## 2026-03-09 Stage 3 TDD Start
+- Why: Stage 3 changes stock semantics from plain on-hand quantities to base-unit conversion, sellable inventory, and FIFO reservations; these rules need to be locked down before implementation.
+- How: Extended `backend/tests/test_inventory.py` with new tests for purchase-unit conversion on inbound, reservation impact on sellable stock, and channel mapping lookup by external SKU.
+- Result: Stage 3 behavior is now specified as executable tests and ready to drive the backend changes.
+
+## 2026-03-09 Stage 3 Backend Domain
+- Why: Unit conversion, reservation, and cross-channel SKU resolution all belong to the inventory domain layer; if they are not modeled consistently, downstream sellable stock numbers will drift.
+- How: Extended `Product` with `base_unit`, `purchase_unit`, and `conversion_rate`; extended `Batch` with `reserved_quantity`; and added `ChannelMapping` in `backend/models.py`. Updated `backend/app.py` to normalize inbound quantities into base units, expose product detail with stock summaries, reserve inventory FIFO by earliest expiry date, and create/list/lookup channel mappings.
+- Result: Backend now has a single source of truth for total, reserved, and sellable stock, and the Stage 3 APIs are in place for verification.
+
+## 2026-03-09 Stage 3 Frontend Workflow
+- Why: The new stock semantics need visible UI surfaces, otherwise reservation and channel mapping remain backend-only features that operators cannot use.
+- How: Updated `frontend/src/views/ProductsView.vue` to capture unit metadata and link into a new detail page, added `frontend/src/views/ProductDetailView.vue` to display total/reserved/sellable stock plus reservation actions, added `frontend/src/views/ChannelMappingsView.vue` for manual external SKU binding, and extended `frontend/src/views/InboundView.vue` with base-vs-purchase unit selection.
+- Result: Stage 3 frontend entry points are in place and wired to the new backend APIs.
+
+## 2026-03-09 Stage 3 Verification & Docs
+- Why: Stage 3 changes persisted schema and inventory semantics, so the handoff needs both verification evidence and an explicit note about the absence of migrations.
+- How: Ran the full backend test suite and frontend production build, then updated `README.md` and `tasks/todo.md` with the new model fields, APIs, pages, and SQLite schema refresh note.
+- Result: `python3 -m pytest backend/tests` passes with 9 tests, `npm run build` passes, and the documentation now reflects the Stage 3 system state and local schema caveat.
+
+## 2026-03-09 Stage 4 TDD Start
+- Why: CSV import and expiry warning logic both affect persisted inventory state, so they need explicit tests before implementation to avoid silent stock drift.
+- How: Added Stage 4 tests for missing expiry date fallback, CSV purchase-unit conversion, and warning classification for a batch expiring tomorrow.
+- Result: Stage 4 behavior is specified in tests and ready to drive the import service and dashboard APIs.
+
+## 2026-03-09 Stage 4 Backend Import & Monitoring
+- Why: Stage 4 needs a repeatable bulk initialization path and a single expiry-monitoring source of truth for both dashboard cards and detailed batch views.
+- How: Added `backend/services/import_service.py` to parse CSV files, default missing expiry dates to `2099-12-31`, normalize purchase units into base units, and apply `accumulate` or `overwrite` merge rules. Extended `backend/app.py` with import preview/commit endpoints, dashboard stats, and expiry report APIs using shared expiry-status logic.
+- Result: Backend now supports CSV-driven inventory initialization and expiry analytics, and the new Stage 4 tests pass against those flows.
+
+## 2026-03-09 Stage 4 Frontend Dashboard & Import
+- Why: The CSV import and expiry warning features need visible operator workflows; otherwise Stage 4 would remain backend-only.
+- How: Replaced the placeholder home page with live dashboard cards tied to `/api/v1/dashboard/stats`, upgraded `frontend/src/views/StockView.vue` into a filterable expiry report with status-colored rows, added `frontend/src/views/DataManagementView.vue` for upload/preview/save import flow, and exposed the new data route in navigation.
+- Result: Stage 4 frontend entry points are wired to the backend import and monitoring APIs and ready for build verification.
+
+## 2026-03-09 Stage 4 Verification & Docs
+- Why: Stage 4 adds both new workflows and new schema-dependent behavior, so the handoff needs explicit verification evidence and updated operator-facing docs.
+- How: Ran the full backend test suite and frontend production build, then updated `README.md` and `tasks/todo.md` with import behavior, dashboard endpoints, expiry report filtering, and the new data-management UI route.
+- Result: `python3 -m pytest backend/tests` passes with 12 tests, `npm run build` passes, and the documentation now reflects the complete Stage 4 system state.
+
+## 2026-03-09 Stage 5 TDD Start
+- Why: Stage 5 changes inventory from standalone reserve operations to a full order lifecycle with persistent status and RBAC, which is easy to break if implemented piecemeal.
+- How: Extended test fixtures with a seeded `staff` user and added tests for channel-driven order sync, admin-only export restrictions, and fulfill-time stock deduction plus OUT transaction creation.
+- Result: Stage 5 requirements are now encoded as executable tests and ready to drive the order and permission implementation.
+
+## 2026-03-09 Stage 5 Backend Domain
+- Why: The system needed persistent order state and transaction traces to support a true reserve-to-fulfill lifecycle; at the same time, export/import and mapping actions needed hard server-side role gates.
+- How: Added `SalesOrder`, `OrderAllocation`, and `InventoryTransaction` models in `backend/models.py`; introduced `admin_required` in `backend/app.py`; implemented order sync, order listing, fulfillment, and export endpoints; and restricted import, export, and channel-mapping creation to admin users.
+- Result: Stage 5 backend now has a persisted order lifecycle, OUT transaction records, and enforceable RBAC boundaries ready for verification.
+
+## 2026-03-09 Stage 5 Frontend RBAC & Order Console
+- Why: Stage 5 also requires operator-facing workflows for order processing, role-based menu exposure, report download, and quick remediation when H5 scans return an unknown code.
+- How: Added local auth session helpers under `frontend/src/auth/session.js`, persisted the logged-in user in `frontend/src/views/LoginView.vue`, and extended `frontend/src/router/index.js` plus `frontend/src/layouts/MainLayout.vue` to hide admin-only routes and block direct navigation to `财务统计` and `用户设置` for staff. Added `frontend/src/views/OrdersView.vue`, `frontend/src/views/FinanceView.vue`, and `frontend/src/views/SettingsView.vue`, expanded `frontend/src/views/DataManagementView.vue` with CSV/XLSX report download actions, and added an admin-only quick channel-mapping entry point in `frontend/src/views/InboundView.vue`.
+- Result: The frontend now covers the Stage 5 order loop, admin-only report operations, and UI-level role gating expected for Web and H5 flows.
+
+## 2026-03-09 Stage 5 Verification & Runtime Export Check
+- Why: Stage 5 introduces a runtime-only dependency path (`pandas`/`openpyxl`) that the existing pytest suite did not exercise on the happy path, so a compile-only check would be insufficient.
+- How: Installed the backend requirements from `backend/requirements.txt`, re-ran `python3 -m pytest backend/tests`, re-ran `npm run build` in `frontend/`, and executed a Flask test-client script that logged in as admin and requested `/api/v1/reports/export?format=csv` plus `format=xlsx`.
+- Result: Backend tests pass with `15 passed`, the frontend production build passes, and the export endpoint now returns valid CSV and XLSX attachments for an admin user.

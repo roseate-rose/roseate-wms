@@ -2,17 +2,46 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 
+import { getStoredRole } from "../auth/session";
+
 const route = useRoute();
+const role = getStoredRole();
 
 const navItems = [
   { name: "home", label: "首页", path: "/" },
   { name: "products", label: "商品", path: "/products" },
+  { name: "orders", label: "订单", path: "/orders" },
+  { name: "data", label: "数据", path: "/data" },
+  { name: "channels", label: "渠道", path: "/channels" },
+  { name: "finance", label: "财务统计", path: "/finance", adminOnly: true },
+  { name: "settings", label: "用户设置", path: "/settings", adminOnly: true },
   { name: "inbound", label: "入库", path: "/inbound" },
   { name: "outbound", label: "出库", path: "/outbound" },
   { name: "stock", label: "库存", path: "/stock" },
 ];
 
+const visibleSidebarItems = computed(() =>
+  navItems.filter((item) => !item.adminOnly || role === "admin"),
+);
+const visibleMobileItems = computed(() =>
+  visibleSidebarItems.value.filter((item) =>
+    ["/", "/products", "/orders", "/inbound", "/stock"].includes(item.path),
+  ),
+);
 const activePath = computed(() => route.path);
+
+function isActive(path) {
+  if (path === "/") {
+    return activePath.value === "/";
+  }
+
+  return activePath.value === path || activePath.value.startsWith(`${path}/`);
+}
+
+const currentLabel = computed(() => {
+  const matchedItem = visibleSidebarItems.value.find((item) => isActive(item.path));
+  return matchedItem?.label || "工作台";
+});
 </script>
 
 <template>
@@ -26,14 +55,14 @@ const activePath = computed(() => route.path);
         <p class="mt-2 text-sm text-slate-500">批次优先 · FIFO 出库 · H5 扫码优先</p>
       </div>
 
-      <nav class="mt-10 space-y-3">
+      <nav class="mt-10 space-y-3 overflow-y-auto">
         <RouterLink
-          v-for="item in navItems"
+          v-for="item in visibleSidebarItems"
           :key="item.name"
           :to="item.path"
           class="flex items-center rounded-2xl px-4 py-3 text-sm font-medium transition"
           :class="
-            activePath === item.path
+            isActive(item.path)
               ? 'bg-brand text-white shadow-lg shadow-brand/20'
               : 'text-slate-600 hover:bg-brand-soft hover:text-brand-dark'
           "
@@ -48,7 +77,7 @@ const activePath = computed(() => route.path);
         <div class="rounded-3xl bg-white/75 px-5 py-4 shadow-sm backdrop-blur">
           <p class="text-sm text-slate-500">当前模块</p>
           <h2 class="mt-1 text-xl font-semibold text-slate-900">
-            {{ navItems.find((item) => item.path === activePath)?.label || "工作台" }}
+            {{ currentLabel }}
           </h2>
         </div>
       </header>
@@ -63,12 +92,12 @@ const activePath = computed(() => route.path);
     >
       <div class="grid grid-cols-5 gap-2">
         <RouterLink
-          v-for="item in navItems"
+          v-for="item in visibleMobileItems"
           :key="item.name"
           :to="item.path"
           class="rounded-2xl px-2 py-3 text-center text-xs font-medium transition"
           :class="
-            activePath === item.path
+            isActive(item.path)
               ? 'bg-brand text-white shadow-md shadow-brand/20'
               : 'text-slate-500 hover:bg-brand-soft hover:text-brand-dark'
           "

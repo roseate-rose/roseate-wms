@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import { TOKEN_KEY } from "../api/http";
+import { getStoredRole } from "../auth/session";
 
 const routes = [
   {
@@ -22,6 +23,38 @@ const routes = [
         path: "products",
         name: "products",
         component: () => import("../views/ProductsView.vue"),
+      },
+      {
+        path: "products/:hbCode",
+        name: "product-detail",
+        component: () => import("../views/ProductDetailView.vue"),
+      },
+      {
+        path: "channels",
+        name: "channels",
+        component: () => import("../views/ChannelMappingsView.vue"),
+      },
+      {
+        path: "orders",
+        name: "orders",
+        component: () => import("../views/OrdersView.vue"),
+      },
+      {
+        path: "data",
+        name: "data",
+        component: () => import("../views/DataManagementView.vue"),
+      },
+      {
+        path: "finance",
+        name: "finance",
+        component: () => import("../views/FinanceView.vue"),
+        meta: { adminOnly: true },
+      },
+      {
+        path: "settings",
+        name: "settings",
+        component: () => import("../views/SettingsView.vue"),
+        meta: { adminOnly: true },
       },
       {
         path: "inbound",
@@ -60,6 +93,10 @@ router.beforeEach((to) => {
       path: "/login",
       query: to.fullPath === "/" ? {} : { redirect: to.fullPath },
     };
+  }
+
+  if (to.meta.adminOnly && getStoredRole() !== "admin") {
+    return { path: "/" };
   }
 
   return true;
