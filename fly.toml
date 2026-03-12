@@ -1,5 +1,5 @@
 app = "roseate-wms"
-primary_region = "nrt"
+primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
@@ -18,3 +18,7 @@ primary_region = "nrt"
 [[mounts]]
   source = "roseate_storage"
   destination = "/app/instance"
+
+[vm]
+  size = "shared-cpu-1x"
+  memory = 256
