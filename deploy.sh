@@ -18,11 +18,16 @@ if [[ ! -f "fly.toml" ]]; then
 fi
 
 echo "Checking Fly volume ${VOLUME_NAME} for app ${APP_NAME}..."
-if ! flyctl volumes list -a "${APP_NAME}" | awk 'NR>1 {print $1}' | grep -Fxq "${VOLUME_NAME}"; then
+existing_count="$(flyctl volumes list -a "${APP_NAME}" | awk -v name="${VOLUME_NAME}" 'NR>1 && $3==name {c++} END {print c+0}')"
+if [[ "${existing_count}" -eq 0 ]]; then
   echo "Creating volume ${VOLUME_NAME} in region ${VOLUME_REGION} (${VOLUME_SIZE}GB)..."
   flyctl volumes create "${VOLUME_NAME}" --app "${APP_NAME}" --region "${VOLUME_REGION}" --size "${VOLUME_SIZE}" --yes
+elif [[ "${existing_count}" -eq 1 ]]; then
+  echo "Volume ${VOLUME_NAME} already exists; skipping create."
 else
-  echo "Volume ${VOLUME_NAME} already exists."
+  echo "Multiple volumes named ${VOLUME_NAME} exist for ${APP_NAME}. Refusing to create another."
+  flyctl volumes list -a "${APP_NAME}"
+  exit 1
 fi
 
 echo "Deploying ${APP_NAME}..."
