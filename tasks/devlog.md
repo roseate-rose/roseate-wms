@@ -124,3 +124,8 @@
 - Why: The sidebar needed to reflect the operator mental model (dashboard -> products -> orders -> inventory) and consolidate non-core features under a single entry. The website also needed a simple changelog page.
 - How: Added `OtherView.vue` to host non-core navigation links, added `ChangelogView.vue`, and updated `frontend/src/router/index.js` route `meta.title` plus `frontend/src/layouts/MainLayout.vue` to enforce the new sidebar order: 首页、商品、订单、库存、其他、设置.
 - Result: `npm run build` passes and the UI now includes a consolidated "其他" hub and a changelog page.
+
+## 2026-03-12 Product Archive Import + Units/extra_data UX
+- Why: 商品建档在真实业务里通常来自表格初始化；同时需要把单位换算表达统一成一个口径，并让扩展字段可被运营查看（但默认不占空间）。
+- How: Added `backend/services/product_import_service.py` to parse CSV/XLSX via pandas, validate required columns (`hb_code`, `name`, `spec`), and tolerate `extra_data` JSON escaping. Implemented admin-only endpoints `POST /api/v1/products/import/preview` and `POST /api/v1/products/import` in `backend/app.py`, with pytest coverage in `backend/tests/test_inventory.py`. Updated `frontend/src/views/ProductsView.vue` to add an admin import panel (upload -> preview -> commit), renamed the product create form label to “计量单位”, added a computed conversion hint, and rendered `extra_data` as a collapsed JSON block with expand/collapse on both desktop and mobile layouts.
+- Result: `python3 -m pytest backend/tests` passes (21 tests). `npm run build` passes.

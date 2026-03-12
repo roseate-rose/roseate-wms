@@ -33,3 +33,21 @@
 ## Review / Summary
 - [x] `python3 -m pytest backend/tests` passes (20 tests)
 - [x] `npm run build` passes
+
+---
+
+# Product Import + Units UI Todo
+
+## Scope
+- [x] Add admin-only product import preview/commit endpoints
+- [x] Implement CSV/XLSX parsing with tolerant `extra_data` JSON parsing
+- [x] Add pytest coverage for RBAC + preview/commit behavior
+- [x] Add Products page import panel (upload -> preview -> commit)
+- [x] Keep unit conversion as a single expression: `base_unit + purchase_unit + conversion_rate`
+- [x] Update product create form label to “计量单位” and show a computed conversion hint
+- [x] Show `extra_data` to users but collapsed by default (desktop table + mobile cards)
+- [x] Verify: `python3 -m pytest backend/tests` and `npm run build`
+
+## Review / Summary
+- [x] `python3 -m pytest backend/tests` passes (21 tests)
+- [x] `npm run build` passes

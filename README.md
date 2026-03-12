@@ -45,7 +45,8 @@ roseate-wms/
 │   ├── requirements.txt
 │   ├── services/
 │   │   ├── __init__.py
-│   │   └── import_service.py
+│   │   ├── import_service.py
+│   │   └── product_import_service.py
 │   └── tests/
 │       ├── conftest.py
 │       ├── test_auth.py
@@ -66,11 +67,13 @@ roseate-wms/
 │       ├── style.css
 │       └── views/
 │           ├── ChannelMappingsView.vue
+│           ├── ChangelogView.vue
 │           ├── DataManagementView.vue
 │           ├── FinanceView.vue
 │           ├── HomeView.vue
 │           ├── InboundView.vue
 │           ├── LoginView.vue
+│           ├── OtherView.vue
 │           ├── OrdersView.vue
 │           ├── OutboundView.vue
 │           ├── ProductDetailView.vue
@@ -143,6 +146,16 @@ roseate-wms/
 - `GET /api/v1/products`
 - `GET /api/v1/products/<hb_code>`
 - `POST /api/v1/products`
+- `POST /api/v1/products/import/preview`
+  - `multipart/form-data`
+  - 字段：`file`, `mode=skip|overwrite`
+  - 必填列：`hb_code`, `name`, `spec`
+  - 可选列：`barcode`, `unit`, `base_unit`, `purchase_unit`, `conversion_rate`, `extra_data`(JSON)
+  - 返回前 5 条预览数据
+- `POST /api/v1/products/import`
+  - `multipart/form-data`
+  - 字段：`file`, `mode=skip|overwrite`
+  - 仅 `admin` 可调用
 - `POST /api/v1/inventory/inbound`
   - 接收 `unit_type`：`base` / `purchase`
   - `purchase` 会按 `quantity * conversion_rate` 转为最小单位入库
@@ -325,10 +338,10 @@ flyctl secrets set JWT_SECRET_KEY='replace-with-a-long-random-secret' --app rose
 
 ## 注意事项
 - 当前项目仍未接入数据库迁移工具；如果你本地沿用旧版 SQLite 文件，新增字段不会自动补齐。开发中遇到旧 schema 冲突时，删除本地 `instance/roseate_wms.db` 后重新启动即可。
-- CSV 导入假设商品档案已存在；导入阶段不会自动创建商品。
+- `inventory/import`（批次库存导入）假设商品档案已存在；该导入不会自动创建商品。商品建档可使用 `products/import`（商品档案导入）。
 
 ## 验证结果
-- `python3 -m pytest backend/tests` 通过（15 tests）
+- `python3 -m pytest backend/tests` 通过（21 tests）
 - `npm run build` 通过
 - 管理员报表导出已用 Flask test client 实测，`csv` 与 `xlsx` 都返回 `200`
 

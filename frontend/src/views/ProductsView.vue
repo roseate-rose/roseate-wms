@@ -3,8 +3,11 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import http from "../api/http";
+import { getStoredRole } from "../auth/session";
 
 const route = useRoute();
+const role = getStoredRole();
+const isAdmin = role === "admin";
 
 const loading = ref(false);
 const saving = ref(false);
@@ -13,6 +16,16 @@ const jsonError = ref("");
 const searchText = ref("");
 const products = ref([]);
 const showCreateForm = ref(false);
+const showImportPanel = ref(false);
+
+const importMode = ref("skip");
+const importFile = ref(null);
+const importPreview = ref(null);
+const importingPreview = ref(false);
+const importingCommit = ref(false);
+const importError = ref("");
+const importSuccess = ref("");
+const expandedExtra = ref(new Set());
 
 const productForm = reactive({
   hb_code: "",
@@ -27,6 +40,20 @@ const productForm = reactive({
 });
 
 const hasProducts = computed(() => products.value.length > 0);
+
+const conversionHint = computed(() => {
+  const purchase = productForm.purchase_unit.trim();
+  const base = productForm.base_unit.trim();
+  const rate = Number(productForm.conversion_rate);
+  if (!purchase || !base || !rate || rate <= 0) {
+    return "";
+  }
+  const perBase = 1 / rate;
+  if (!Number.isFinite(perBase)) {
+    return "";
+  }
+  return `1 ${base} = ${perBase} ${purchase}`;
+});
 
 function applyRouteDefaults() {
   showCreateForm.value = route.query.create === "1";
@@ -63,6 +90,82 @@ function resetForm() {
   productForm.conversion_rate = 1;
   productForm.extra_data_text = "";
   jsonError.value = "";
+}
+
+function toggleExtra(hbCode) {
+  const next = new Set(expandedExtra.value);
+  if (next.has(hbCode)) {
+    next.delete(hbCode);
+  } else {
+    next.add(hbCode);
+  }
+  expandedExtra.value = next;
+}
+
+function onImportFileChange(event) {
+  const [file] = event.target.files || [];
+  importFile.value = file || null;
+  importPreview.value = null;
+  importError.value = "";
+  importSuccess.value = "";
+}
+
+function buildImportFormData() {
+  const formData = new FormData();
+  formData.append("mode", importMode.value);
+  formData.append("file", importFile.value);
+  return formData;
+}
+
+async function previewImport() {
+  if (!importFile.value) {
+    importError.value = "请先选择 CSV / Excel 文件";
+    return;
+  }
+
+  importingPreview.value = true;
+  importError.value = "";
+  importSuccess.value = "";
+
+  try {
+    const { data } = await http.post("/products/import/preview", buildImportFormData(), {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    importPreview.value = data.data;
+  } catch (error) {
+    importError.value = error.response?.data?.msg || "预览失败";
+  } finally {
+    importingPreview.value = false;
+  }
+}
+
+async function commitImport() {
+  if (!importFile.value) {
+    importError.value = "请先选择文件";
+    return;
+  }
+  if (!importPreview.value) {
+    importError.value = "请先预览确认";
+    return;
+  }
+
+  importingCommit.value = true;
+  importError.value = "";
+  importSuccess.value = "";
+
+  try {
+    const { data } = await http.post("/products/import", buildImportFormData(), {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    importSuccess.value = `导入完成：新建 ${data.data.created}，覆盖 ${data.data.updated}，跳过 ${data.data.skipped}。`;
+    importPreview.value = null;
+    importFile.value = null;
+    await loadProducts();
+  } catch (error) {
+    importError.value = error.response?.data?.msg || "导入失败";
+  } finally {
+    importingCommit.value = false;
+  }
 }
 
 async function createProduct() {
@@ -151,9 +254,121 @@ watch(
           >
             {{ showCreateForm ? "收起建档" : "新建商品" }}
           </button>
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand-dark"
+            @click="showImportPanel = !showImportPanel"
+          >
+            {{ showImportPanel ? "收起导入" : "导入表格" }}
+          </button>
         </div>
       </div>
     </div>
+
+    <article
+      v-if="showImportPanel"
+      class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6"
+    >
+      <h4 class="text-lg font-semibold text-slate-900">导入商品档案</h4>
+      <p class="mt-1 text-sm text-slate-500">
+        支持 CSV / Excel。必填列：hb_code、name、spec。可选列：barcode、unit、base_unit、purchase_unit、conversion_rate、extra_data(JSON)。
+      </p>
+
+      <div v-if="!isAdmin" class="mt-4 rounded-3xl bg-amber-50 p-4 text-sm text-amber-700">
+        当前账号不是管理员，无法导入。
+      </div>
+
+      <div v-else class="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div class="space-y-4">
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">文件</span>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              class="block w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+              @change="onImportFileChange"
+            />
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-slate-700">冲突处理</span>
+            <select
+              v-model="importMode"
+              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+            >
+              <option value="skip">跳过已存在 hb_code</option>
+              <option value="overwrite">覆盖已存在 hb_code</option>
+            </select>
+          </label>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              class="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+              :disabled="importingPreview"
+              @click="previewImport"
+            >
+              {{ importingPreview ? "预览中..." : "预览前 5 条" }}
+            </button>
+            <button
+              type="button"
+              class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
+              :disabled="importingCommit || !importPreview"
+              @click="commitImport"
+            >
+              {{ importingCommit ? "导入中..." : "确认导入" }}
+            </button>
+          </div>
+
+          <p v-if="importError" class="text-sm text-red-600">{{ importError }}</p>
+          <p v-if="importSuccess" class="text-sm text-emerald-700">{{ importSuccess }}</p>
+        </div>
+
+        <div class="rounded-[2rem] border border-slate-100 bg-slate-50 p-5">
+          <p class="text-sm font-semibold text-slate-900">预览</p>
+          <p class="mt-1 text-sm text-slate-500">
+            总计 {{ importPreview?.total_rows || 0 }} 行，有效 {{ importPreview?.valid_rows || 0 }} 行，错误
+            {{ importPreview?.error_rows || 0 }} 行。
+          </p>
+
+          <div v-if="!importPreview" class="mt-4 text-sm text-slate-500">
+            选择文件后点击预览。
+          </div>
+
+          <div v-else class="mt-4 space-y-3">
+            <div v-if="importPreview.errors?.length" class="rounded-3xl bg-amber-50 p-4 text-sm text-amber-700">
+              已显示前 {{ importPreview.errors.length }} 条错误，请先修正表格再导入。
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-left text-sm">
+                <thead class="text-xs uppercase tracking-[0.25em] text-slate-400">
+                  <tr>
+                    <th class="py-2 pr-4">HB</th>
+                    <th class="py-2 pr-4">名称</th>
+                    <th class="py-2 pr-4">规格</th>
+                    <th class="py-2 pr-4">单位</th>
+                    <th class="py-2 pr-4">换算</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 text-slate-700">
+                  <tr v-for="row in importPreview.preview_rows" :key="row.row_number">
+                    <td class="py-2 pr-4">{{ row.hb_code }}</td>
+                    <td class="py-2 pr-4">{{ row.name }}</td>
+                    <td class="py-2 pr-4">{{ row.spec }}</td>
+                    <td class="py-2 pr-4">{{ row.unit }}</td>
+                    <td class="py-2 pr-4">
+                      1 {{ row.purchase_unit }} = {{ row.conversion_rate }} {{ row.base_unit }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
 
     <article v-if="showCreateForm" class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
       <h4 class="text-lg font-semibold text-slate-900">新建商品档案</h4>
@@ -197,12 +412,13 @@ watch(
             />
           </label>
           <label class="block">
-            <span class="mb-2 block text-sm font-medium text-slate-700">单位</span>
+            <span class="mb-2 block text-sm font-medium text-slate-700">计量单位</span>
             <input
               v-model="productForm.unit"
               type="text"
               required
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+              placeholder="例如：罐 / 盒 / 个"
             />
           </label>
           <label class="block">
@@ -232,6 +448,7 @@ watch(
               required
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
             />
+            <p v-if="conversionHint" class="mt-2 text-xs text-slate-500">{{ conversionHint }}</p>
           </label>
         </div>
 
@@ -289,6 +506,7 @@ watch(
                 <th class="px-6 py-4">单位</th>
                 <th class="px-6 py-4">可售库存</th>
                 <th class="px-6 py-4">总库存</th>
+                <th class="px-6 py-4">扩展字段</th>
                 <th class="px-6 py-4">操作</th>
               </tr>
             </thead>
@@ -304,6 +522,23 @@ watch(
                   <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
                     {{ item.total_stock }}
                   </span>
+                </td>
+                <td class="px-6 py-4">
+                  <div v-if="item.extra_data && Object.keys(item.extra_data).length" class="space-y-2">
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-slate-600 underline decoration-dotted"
+                      @click="toggleExtra(item.hb_code)"
+                    >
+                      {{ expandedExtra.has(item.hb_code) ? "收起" : `查看(${Object.keys(item.extra_data).length})` }}
+                    </button>
+                    <div v-if="expandedExtra.has(item.hb_code)" class="rounded-2xl bg-white/70 p-3">
+                      <pre class="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{{
+                        JSON.stringify(item.extra_data, null, 2)
+                      }}</pre>
+                    </div>
+                  </div>
+                  <span v-else class="text-slate-400">-</span>
                 </td>
                 <td class="px-6 py-4">
                   <RouterLink
@@ -345,6 +580,26 @@ watch(
               <div>
                 <p class="text-slate-500">总库存</p>
                 <p class="font-medium text-slate-800">{{ item.total_stock }}</p>
+              </div>
+              <div class="col-span-2">
+                <p class="text-slate-500">扩展字段</p>
+                <button
+                  v-if="item.extra_data && Object.keys(item.extra_data).length"
+                  type="button"
+                  class="mt-1 text-left text-sm font-medium text-brand-dark underline decoration-dotted"
+                  @click="toggleExtra(item.hb_code)"
+                >
+                  {{ expandedExtra.has(item.hb_code) ? "收起" : `查看(${Object.keys(item.extra_data).length})` }}
+                </button>
+                <p v-else class="mt-1 font-medium text-slate-800">-</p>
+                <div
+                  v-if="expandedExtra.has(item.hb_code) && item.extra_data && Object.keys(item.extra_data).length"
+                  class="mt-2 rounded-2xl bg-white/70 p-3"
+                >
+                  <pre class="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{{
+                    JSON.stringify(item.extra_data, null, 2)
+                  }}</pre>
+                </div>
               </div>
             </div>
             <RouterLink
