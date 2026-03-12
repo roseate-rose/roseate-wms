@@ -722,3 +722,55 @@ def test_ledger_export_running_balance_batch_scope(client, auth_headers, app):
     assert by_batch["BATCH-A"][0] == 5
     assert by_batch["BATCH-A"][-1] == 2
     assert by_batch["BATCH-B"][0] == 6
+
+
+def test_products_import_preview_and_commit(client, auth_headers, staff_auth_headers, app):
+    # Staff should be forbidden (admin-only).
+    csv_content = (
+        "hb_code,name,spec,unit,base_unit,purchase_unit,conversion_rate,barcode,extra_data\n"
+        'HBX001,导入商品,10ml,盒,支,盒,10,6909999999999,"{""brand"":""Roseate""}"\n'
+    )
+    forbidden = client.post(
+        "/api/v1/products/import/preview",
+        data={
+            "mode": "skip",
+            "file": (BytesIO(csv_content.encode("utf-8")), "products.csv"),
+        },
+        headers=staff_auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert forbidden.status_code == 403
+
+    preview = client.post(
+        "/api/v1/products/import/preview",
+        data={
+            "mode": "skip",
+            "file": (BytesIO(csv_content.encode("utf-8")), "products.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert preview.status_code == 200
+    payload = preview.get_json()["data"]
+    assert payload["total_rows"] == 1
+    assert payload["valid_rows"] == 1
+    assert payload["preview_rows"][0]["hb_code"] == "HBX001"
+
+    commit = client.post(
+        "/api/v1/products/import",
+        data={
+            "mode": "skip",
+            "file": (BytesIO(csv_content.encode("utf-8")), "products.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert commit.status_code == 200
+    commit_payload = commit.get_json()["data"]
+    assert commit_payload["created"] == 1
+
+    with app.app_context():
+        product = Product.query.filter_by(hb_code="HBX001").first()
+        assert product is not None
+        assert product.conversion_rate == 10
+        assert product.get_extra_data().get("brand") == "Roseate"

@@ -31,6 +31,7 @@ from backend.models import (
     User,
 )
 from backend.services.import_service import classify_expiry_status, import_from_csv
+from backend.services.product_import_service import import_products_from_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -698,6 +699,72 @@ def register_routes(app):
         db.session.commit()
 
         return api_response(code=201, data={"product": product.to_dict(include_stock=True)})
+
+    @app.post("/api/v1/products/import/preview")
+    @admin_required
+    def products_import_preview():
+        upload = request.files.get("file")
+        mode = (request.form.get("mode") or "skip").strip().lower()
+
+        if not upload:
+            return api_response(code=400, msg="file is required")
+
+        try:
+            result = import_products_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "products.csv",
+                mode=mode,
+                commit=False,
+            )
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
+
+        return api_response(
+            data={
+                "mode": mode,
+                "columns": result["columns"],
+                "preview_rows": result["preview_rows"],
+                "total_rows": result["total_rows"],
+                "valid_rows": result["valid_rows"],
+                "error_rows": result["error_rows"],
+                "errors": result["errors"],
+            }
+        )
+
+    @app.post("/api/v1/products/import")
+    @admin_required
+    def products_import_commit():
+        upload = request.files.get("file")
+        mode = (request.form.get("mode") or "skip").strip().lower()
+
+        if not upload:
+            return api_response(code=400, msg="file is required")
+
+        try:
+            result = import_products_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "products.csv",
+                mode=mode,
+                commit=True,
+                product_model=Product,
+                db=db,
+            )
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
+
+        return api_response(
+            data={
+                "mode": mode,
+                "total_rows": result["total_rows"],
+                "valid_rows": result["valid_rows"],
+                "error_rows": result["error_rows"],
+                "created": result.get("created", 0),
+                "updated": result.get("updated", 0),
+                "skipped": result.get("skipped", 0),
+                "imported_rows": result.get("imported_rows", []),
+                "errors": result["errors"],
+            }
+        )
 
     @app.post("/api/v1/inventory/inbound")
     @jwt_required()
