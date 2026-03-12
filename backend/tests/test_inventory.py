@@ -774,3 +774,118 @@ def test_products_import_preview_and_commit(client, auth_headers, staff_auth_hea
         assert product is not None
         assert product.conversion_rate == 10
         assert product.get_extra_data().get("brand") == "Roseate"
+
+
+def test_inbound_import_unit_conversion_and_merge(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBIM001",
+            "barcode": "6901111111111",
+            "name": "导入入库商品",
+            "spec": "1pc",
+            "unit": "盒",
+            "base_unit": "支",
+            "purchase_unit": "盒",
+            "conversion_rate": 10,
+        },
+        headers=auth_headers,
+    )
+
+    csv_content = (
+        "hb_code,batch_no,expiry_date,quantity,unit_type,cost\n"
+        "HBIM001,B-IMPORT,2027-01-01,1,purchase,5\n"
+        "HBIM001,B-IMPORT,2027-01-01,2,base,5\n"
+    )
+
+    preview = client.post(
+        "/api/v1/inventory/inbound-import/preview",
+        data={"file": (BytesIO(csv_content.encode("utf-8")), "inbound.csv")},
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.get_json()["data"]
+    assert preview_payload["total_rows"] == 2
+    assert preview_payload["valid_rows"] == 2
+
+    commit = client.post(
+        "/api/v1/inventory/inbound-import",
+        data={"file": (BytesIO(csv_content.encode("utf-8")), "inbound.csv")},
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert commit.status_code == 200
+    commit_payload = commit.get_json()["data"]
+    assert commit_payload["created"] == 1
+    assert commit_payload["merged"] == 1
+
+    with app.app_context():
+        batch = Batch.query.filter_by(hb_code="HBIM001").first()
+        assert batch is not None
+        assert batch.current_quantity == 12
+        assert InboundLine.query.filter_by(hb_code="HBIM001").count() == 2
+        assert InventoryTransaction.query.filter_by(hb_code="HBIM001", transaction_type="IN").count() == 2
+
+
+def test_orders_import_reserve_and_extra_data(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBOM001",
+            "barcode": "6902222222222",
+            "name": "订单导入商品",
+            "spec": "1pc",
+            "unit": "盒",
+            "base_unit": "支",
+            "purchase_unit": "盒",
+            "conversion_rate": 10,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-ORDER-SKU-001",
+            "hb_code": "HBOM001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBOM001",
+            "batch_no": "BATCH-O",
+            "expiry_date": "2027-01-01",
+            "quantity": 10,
+            "cost": 10.0,
+        },
+        headers=auth_headers,
+    )
+
+    csv_content = "订单号,external_sku_id,quantity\nEXT-ORDER-001,DY-ORDER-SKU-001,3\n"
+    commit = client.post(
+        "/api/v1/orders/import",
+        data={
+            "default_channel_name": "抖音",
+            "template": "cainiao",
+            "file": (BytesIO(csv_content.encode("utf-8")), "orders.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert commit.status_code == 200
+    payload = commit.get_json()["data"]
+    assert payload["created"] == 1
+
+    with app.app_context():
+        order = SalesOrder.query.filter_by(hb_code="HBOM001").order_by(SalesOrder.id.desc()).first()
+        assert order is not None
+        extra = order.get_extra_data()
+        assert extra.get("template") == "cainiao"
+        assert extra.get("external_order_no") == "EXT-ORDER-001"
+
+        batch = Batch.query.filter_by(hb_code="HBOM001").first()
+        assert batch is not None
+        assert batch.reserved_quantity == 3

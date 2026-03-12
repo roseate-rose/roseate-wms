@@ -31,6 +31,8 @@ from backend.models import (
     User,
 )
 from backend.services.import_service import classify_expiry_status, import_from_csv
+from backend.services.inbound_import_service import build_inbound_rows_from_file
+from backend.services.order_import_service import build_order_rows_from_file
 from backend.services.product_import_service import import_products_from_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -189,7 +191,7 @@ def serialize_order(order):
     return order.to_dict(include_allocations=True)
 
 
-def create_sales_order(channel_name, external_sku_id, quantity):
+def create_sales_order(channel_name, external_sku_id, quantity, *, extra_data=None, commit=True):
     mapping = ChannelMapping.query.filter_by(
         channel_name=channel_name,
         external_sku_id=external_sku_id,
@@ -212,7 +214,10 @@ def create_sales_order(channel_name, external_sku_id, quantity):
         quantity=quantity,
         status="reserved",
     )
-    order.set_extra_data({"source": "external_sync"})
+    merged_extra = {"source": "external_sync"}
+    if isinstance(extra_data, dict) and extra_data:
+        merged_extra.update(extra_data)
+    order.set_extra_data(merged_extra)
     db.session.add(order)
     db.session.flush()
 
@@ -227,10 +232,147 @@ def create_sales_order(channel_name, external_sku_id, quantity):
         db.session.add(order_allocation)
         persisted_allocations.append(order_allocation)
 
-    db.session.commit()
-    db.session.refresh(order)
+    if commit:
+        db.session.commit()
+        db.session.refresh(order)
 
     return order, persisted_allocations, None
+
+
+def apply_inbound_payload(payload, *, receipt=None):
+    """
+    Apply a single inbound payload into the current SQLAlchemy session.
+    Does not commit. Returns (result, error_message, http_code).
+    """
+
+    product = find_product(payload)
+    if not product:
+        return None, "product not found", 404
+
+    batch_no = (payload.get("batch_no") or "").strip()
+    if not batch_no:
+        return None, "batch_no is required", 400
+
+    expiry_date, expiry_error = parse_date(
+        payload.get("expiry_date"),
+        "expiry_date",
+        required=True,
+    )
+    if expiry_error:
+        return None, expiry_error, 400
+
+    production_date, production_error = parse_date(
+        payload.get("production_date"),
+        "production_date",
+    )
+    if production_error:
+        return None, production_error, 400
+
+    quantity, quantity_error = parse_positive_int(payload.get("quantity"), "quantity")
+    if quantity_error:
+        return None, quantity_error, 400
+
+    cost, cost_error = parse_non_negative_float(payload.get("cost", 0), "cost")
+    if cost_error:
+        return None, cost_error, 400
+
+    unit_type = (payload.get("unit_type") or "base").strip().lower()
+    if unit_type not in {"base", "purchase"}:
+        return None, "unit_type must be one of: base, purchase", 400
+
+    normalized_quantity = normalize_inbound_quantity(product, quantity, unit_type)
+
+    batch_extra_data = payload.get("extra_data") or {}
+    line_extra_data = payload.get("line_extra_data") or {}
+    tx_extra_data = payload.get("tx_extra_data") or {}
+
+    batch = Batch.query.filter_by(hb_code=product.hb_code, expiry_date=expiry_date).first()
+    action = "created"
+
+    if batch:
+        batch.current_quantity += normalized_quantity
+        batch.initial_quantity += normalized_quantity
+        batch.cost = cost
+        if not batch.production_date and production_date:
+            batch.production_date = production_date
+        merge_batch_extra_data(batch, batch_extra_data, batch_no)
+        action = "merged"
+    else:
+        batch = Batch(
+            hb_code=product.hb_code,
+            batch_no=batch_no,
+            production_date=production_date,
+            expiry_date=expiry_date,
+            cost=cost,
+            initial_quantity=normalized_quantity,
+            current_quantity=normalized_quantity,
+            reserved_quantity=0,
+        )
+        batch.set_extra_data(batch_extra_data)
+        db.session.add(batch)
+
+    db.session.flush()
+
+    receipt = receipt or get_or_create_inbound_receipt(payload)
+
+    line = InboundLine(
+        receipt_id=receipt.id,
+        hb_code=product.hb_code,
+        batch_id=batch.id,
+        batch_no=batch_no,
+        production_date=production_date,
+        expiry_date=expiry_date,
+        unit_type=unit_type,
+        quantity_input=quantity,
+        normalized_quantity=normalized_quantity,
+        unit_cost=cost,
+    )
+    barcode_value = (payload.get("barcode") or "").strip() or None
+    line_payload = {
+        "action": action,
+        "barcode": barcode_value,
+    }
+    if isinstance(line_extra_data, dict) and line_extra_data:
+        line_payload.update(line_extra_data)
+    line.set_extra_data(line_payload)
+    db.session.add(line)
+
+    inbound_tx = InventoryTransaction(
+        hb_code=product.hb_code,
+        batch_id=batch.id,
+        order_id=None,
+        transaction_type="IN",
+        quantity=normalized_quantity,
+    )
+    tx_payload = {
+        "doc_type": "inbound_receipt",
+        "doc_no": receipt.receipt_no,
+        "supplier_name": receipt.supplier_name,
+        "unit_type": unit_type,
+        "quantity_input": quantity,
+        "unit_cost": cost,
+    }
+    if isinstance(tx_extra_data, dict) and tx_extra_data:
+        tx_payload.update(tx_extra_data)
+    inbound_tx.set_extra_data(tx_payload)
+    db.session.add(inbound_tx)
+
+    # Ensure stock aggregation reflects the in-session batch changes.
+    db.session.flush()
+    db.session.expire(product, ["batches"])
+
+    return (
+        {
+            "action": action,
+            "product": product.to_dict(include_stock=True),
+            "batch": batch.to_dict(),
+            "receipt": receipt.to_dict(),
+            "normalized_quantity": normalized_quantity,
+            "unit_type": unit_type,
+        },
+        None,
+        None,
+    )
 
 
 def fulfill_sales_order(order):
@@ -770,124 +912,155 @@ def register_routes(app):
     @jwt_required()
     def inventory_inbound():
         payload = request.get_json(silent=True) or {}
+        result, error_message, http_code = apply_inbound_payload(payload)
+        if error_message:
+            return api_response(code=http_code or 400, msg=error_message)
 
-        product = find_product(payload)
-        if not product:
-            return api_response(code=404, msg="product not found")
+        db.session.commit()
+        return api_response(data=result)
 
-        batch_no = (payload.get("batch_no") or "").strip()
-        if not batch_no:
-            return api_response(code=400, msg="batch_no is required")
+    @app.post("/api/v1/inventory/inbound-import/preview")
+    @jwt_required()
+    def inbound_import_preview():
+        upload = request.files.get("file")
+        mapping_raw = request.form.get("mapping") or ""
+        default_receipt_no = (request.form.get("receipt_no") or "").strip() or None
+        default_supplier_name = (request.form.get("supplier_name") or "").strip() or None
+        default_remark = (request.form.get("remark") or "").strip() or None
 
-        expiry_date, expiry_error = parse_date(
-            payload.get("expiry_date"),
-            "expiry_date",
-            required=True,
-        )
-        if expiry_error:
-            return api_response(code=400, msg=expiry_error)
+        if not upload:
+            return api_response(code=400, msg="file is required")
 
-        production_date, production_error = parse_date(
-            payload.get("production_date"),
-            "production_date",
-        )
-        if production_error:
-            return api_response(code=400, msg=production_error)
+        mapping = {}
+        if mapping_raw:
+            try:
+                import json
 
-        quantity, quantity_error = parse_positive_int(payload.get("quantity"), "quantity")
-        if quantity_error:
-            return api_response(code=400, msg=quantity_error)
+                mapping = json.loads(mapping_raw) or {}
+            except Exception:
+                return api_response(code=400, msg="mapping must be valid JSON")
 
-        cost, cost_error = parse_non_negative_float(payload.get("cost"), "cost")
-        if cost_error:
-            return api_response(code=400, msg=cost_error)
-
-        unit_type = (payload.get("unit_type") or "base").strip().lower()
-        if unit_type not in {"base", "purchase"}:
-            return api_response(code=400, msg="unit_type must be one of: base, purchase")
-
-        normalized_quantity = normalize_inbound_quantity(product, quantity, unit_type)
-        extra_data = payload.get("extra_data") or {}
-
-        batch = Batch.query.filter_by(hb_code=product.hb_code, expiry_date=expiry_date).first()
-        action = "created"
-
-        if batch:
-            batch.current_quantity += normalized_quantity
-            batch.initial_quantity += normalized_quantity
-            batch.cost = cost
-            if not batch.production_date and production_date:
-                batch.production_date = production_date
-            merge_batch_extra_data(batch, extra_data, batch_no)
-            action = "merged"
-        else:
-            batch = Batch(
-                hb_code=product.hb_code,
-                batch_no=batch_no,
-                production_date=production_date,
-                expiry_date=expiry_date,
-                cost=cost,
-                initial_quantity=normalized_quantity,
-                current_quantity=normalized_quantity,
-                reserved_quantity=0,
+        try:
+            result = build_inbound_rows_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "inbound.csv",
+                mapping=mapping,
+                default_receipt_no=default_receipt_no,
+                default_supplier_name=default_supplier_name,
+                default_remark=default_remark,
             )
-            batch.set_extra_data(extra_data)
-            db.session.add(batch)
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
 
-        # Ensure we have a batch id for receipt lines and transactions.
-        db.session.flush()
-
-        receipt = get_or_create_inbound_receipt(payload)
-
-        line = InboundLine(
-            receipt_id=receipt.id,
-            hb_code=product.hb_code,
-            batch_id=batch.id,
-            batch_no=batch_no,
-            production_date=production_date,
-            expiry_date=expiry_date,
-            unit_type=unit_type,
-            quantity_input=quantity,
-            normalized_quantity=normalized_quantity,
-            unit_cost=cost,
-        )
-        line.set_extra_data(
-            {
-                "action": action,
-                "barcode": (payload.get("barcode") or "").strip() or None,
+        return api_response(
+            data={
+                "columns": result["columns"],
+                "mapping_guess": result["mapping_guess"],
+                "mapping_effective": result["mapping_effective"],
+                "preview_rows": result["preview_rows"],
+                "total_rows": result["total_rows"],
+                "valid_rows": result["valid_rows"],
+                "error_rows": result["error_rows"],
+                "errors": result["errors"],
             }
         )
-        db.session.add(line)
 
-        inbound_tx = InventoryTransaction(
-            hb_code=product.hb_code,
-            batch_id=batch.id,
-            order_id=None,
-            transaction_type="IN",
-            quantity=normalized_quantity,
-        )
-        inbound_tx.set_extra_data(
-            {
-                "doc_type": "inbound_receipt",
-                "doc_no": receipt.receipt_no,
-                "supplier_name": receipt.supplier_name,
-                "unit_type": unit_type,
-                "quantity_input": quantity,
-                "unit_cost": cost,
+    @app.post("/api/v1/inventory/inbound-import")
+    @jwt_required()
+    def inbound_import_commit():
+        upload = request.files.get("file")
+        mapping_raw = request.form.get("mapping") or ""
+        default_receipt_no = (request.form.get("receipt_no") or "").strip() or None
+        default_supplier_name = (request.form.get("supplier_name") or "").strip() or None
+        default_remark = (request.form.get("remark") or "").strip() or None
+
+        if not upload:
+            return api_response(code=400, msg="file is required")
+
+        mapping = {}
+        if mapping_raw:
+            try:
+                import json
+
+                mapping = json.loads(mapping_raw) or {}
+            except Exception:
+                return api_response(code=400, msg="mapping must be valid JSON")
+
+        try:
+            parsed = build_inbound_rows_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "inbound.csv",
+                mapping=mapping,
+                default_receipt_no=default_receipt_no,
+                default_supplier_name=default_supplier_name,
+                default_remark=default_remark,
+            )
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
+
+        # If user mapped a receipt_no column, respect per-row receipts.
+        receipt_col = (parsed.get("mapping_effective") or {}).get("receipt_no") or ""
+        use_row_receipt = bool(receipt_col)
+
+        shared_receipt = None
+        if not use_row_receipt:
+            receipt_payload = {
+                "receipt_no": default_receipt_no or "",
+                "supplier_name": default_supplier_name or "",
+                "remark": default_remark or "",
+                "receipt_extra_data": {
+                    "source": "inbound_import",
+                    "filename": upload.filename,
+                },
             }
-        )
-        db.session.add(inbound_tx)
+            shared_receipt = get_or_create_inbound_receipt(receipt_payload)
+
+        created = 0
+        merged = 0
+        imported_rows = []
+        errors = list(parsed.get("errors") or [])
+
+        for row in parsed.get("rows") or []:
+            row_number = row.get("row_number")
+            payload = row.get("payload") or {}
+
+            # Keep row-level extras out of batch extra_data.
+            row_extra = (payload.get("extra_data") or {}) if isinstance(payload.get("extra_data"), dict) else {}
+            payload["extra_data"] = {}
+            payload["line_extra_data"] = row_extra
+            payload["tx_extra_data"] = {"import_row": row_number}
+
+            nested = db.session.begin_nested()
+            try:
+                result, error_message, http_code = apply_inbound_payload(payload, receipt=shared_receipt)
+                if error_message:
+                    nested.rollback()
+                    errors.append({"row_number": row_number, "error": error_message})
+                    continue
+
+                nested.commit()
+                imported_rows.append(result)
+                if result.get("action") == "merged":
+                    merged += 1
+                else:
+                    created += 1
+            except Exception as exc:  # noqa: BLE001 - isolate per-row failures
+                nested.rollback()
+                errors.append({"row_number": row_number, "error": str(exc)})
 
         db.session.commit()
 
         return api_response(
             data={
-                "action": action,
-                "product": product.to_dict(include_stock=True),
-                "batch": batch.to_dict(),
-                "receipt": receipt.to_dict(),
-                "normalized_quantity": normalized_quantity,
-                "unit_type": unit_type,
+                "total_rows": parsed["total_rows"],
+                "valid_rows": parsed["valid_rows"],
+                "error_rows": len(errors),
+                "created": created,
+                "merged": merged,
+                "receipt": shared_receipt.to_dict() if shared_receipt else None,
+                "preview_rows": parsed["preview_rows"],
+                "imported_rows": imported_rows[:20],
+                "errors": errors[:20],
             }
         )
 
@@ -1048,7 +1221,14 @@ def register_routes(app):
         if quantity_error:
             return api_response(code=400, msg=quantity_error)
 
-        order, allocations, error_message = create_sales_order(channel_name, external_sku_id, quantity)
+        extra_data = payload.get("extra_data") or {}
+        order, allocations, error_message = create_sales_order(
+            channel_name,
+            external_sku_id,
+            quantity,
+            extra_data=extra_data,
+            commit=True,
+        )
         if error_message:
             return api_response(code=409, msg=error_message)
 
@@ -1056,6 +1236,126 @@ def register_routes(app):
             data={
                 "order": serialize_order(order),
                 "allocations": [allocation.to_dict() for allocation in allocations],
+            }
+        )
+
+    @app.post("/api/v1/orders/import/preview")
+    @jwt_required()
+    def orders_import_preview():
+        upload = request.files.get("file")
+        mapping_raw = request.form.get("mapping") or ""
+        default_channel_name = (request.form.get("default_channel_name") or "").strip()
+        template_name = (request.form.get("template") or "generic").strip() or "generic"
+
+        if not upload:
+            return api_response(code=400, msg="file is required")
+
+        mapping = {}
+        if mapping_raw:
+            try:
+                import json
+
+                mapping = json.loads(mapping_raw) or {}
+            except Exception:
+                return api_response(code=400, msg="mapping must be valid JSON")
+
+        try:
+            result = build_order_rows_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "orders.csv",
+                mapping=mapping,
+                default_channel_name=default_channel_name,
+                template_name=template_name,
+            )
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
+
+        return api_response(
+            data={
+                "columns": result["columns"],
+                "mapping_guess": result["mapping_guess"],
+                "mapping_effective": result["mapping_effective"],
+                "preview_rows": result["preview_rows"],
+                "total_rows": result["total_rows"],
+                "valid_rows": result["valid_rows"],
+                "error_rows": result["error_rows"],
+                "errors": result["errors"],
+                "template": result["template"],
+            }
+        )
+
+    @app.post("/api/v1/orders/import")
+    @jwt_required()
+    def orders_import_commit():
+        upload = request.files.get("file")
+        mapping_raw = request.form.get("mapping") or ""
+        default_channel_name = (request.form.get("default_channel_name") or "").strip()
+        template_name = (request.form.get("template") or "generic").strip() or "generic"
+
+        if not upload:
+            return api_response(code=400, msg="file is required")
+
+        mapping = {}
+        if mapping_raw:
+            try:
+                import json
+
+                mapping = json.loads(mapping_raw) or {}
+            except Exception:
+                return api_response(code=400, msg="mapping must be valid JSON")
+
+        try:
+            parsed = build_order_rows_from_file(
+                file_stream=upload.stream,
+                filename=upload.filename or "orders.csv",
+                mapping=mapping,
+                default_channel_name=default_channel_name,
+                template_name=template_name,
+            )
+        except ValueError as exc:
+            return api_response(code=400, msg=str(exc))
+
+        created = 0
+        imported = []
+        errors = list(parsed.get("errors") or [])
+
+        for row in parsed.get("rows") or []:
+            row_number = row.get("row_number")
+            payload = row.get("payload") or {}
+
+            nested = db.session.begin_nested()
+            try:
+                order, allocations, error_message = create_sales_order(
+                    payload["channel_name"],
+                    payload["external_sku_id"],
+                    payload["quantity"],
+                    extra_data=payload.get("extra_data") or {},
+                    commit=False,
+                )
+                if error_message:
+                    nested.rollback()
+                    errors.append({"row_number": row_number, "error": error_message})
+                    continue
+
+                nested.commit()
+                created += 1
+                imported.append({"order": serialize_order(order), "allocations": [a.to_dict() for a in allocations]})
+            except Exception as exc:  # noqa: BLE001 - isolate per-row failures
+                nested.rollback()
+                errors.append({"row_number": row_number, "error": str(exc)})
+
+        db.session.commit()
+
+        return api_response(
+            data={
+                "total_rows": parsed["total_rows"],
+                "valid_rows": parsed["valid_rows"],
+                "error_rows": len(errors),
+                "created": created,
+                "preview_rows": parsed["preview_rows"],
+                "imported_rows": imported[:20],
+                "errors": errors[:20],
+                "template": parsed["template"],
             }
         )
 
