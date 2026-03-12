@@ -119,3 +119,8 @@
 - Why: The ledger-style table header requires a document-numbered IN/OUT trace and a deterministic running-balance calculation; without inbound receipts and IN transactions, export would be incomplete.
 - How: Added `InboundReceipt` and `InboundLine` models in `backend/models.py`, updated `/api/v1/inventory/inbound` to create receipt/line records and write `InventoryTransaction(transaction_type=\"IN\")`, enriched OUT transactions with `doc_no` metadata, and implemented `/api/v1/reports/ledger-export` supporting `balance_scope=product|batch` (plus optional batch columns). Added pytest coverage for receipt creation and running balances.
 - Result: Backend tests pass with 20 tests and the new ledger export endpoint can generate CSV/XLSX matching the reference header while computing on-the-fly balances.
+
+## 2026-03-12 Frontend Navigation Refresh + Changelog
+- Why: The sidebar needed to reflect the operator mental model (dashboard -> products -> orders -> inventory) and consolidate non-core features under a single entry. The website also needed a simple changelog page.
+- How: Added `OtherView.vue` to host non-core navigation links, added `ChangelogView.vue`, and updated `frontend/src/router/index.js` route `meta.title` plus `frontend/src/layouts/MainLayout.vue` to enforce the new sidebar order: 首页、商品、订单、库存、其他、设置.
+- Result: `npm run build` passes and the UI now includes a consolidated "其他" hub and a changelog page.

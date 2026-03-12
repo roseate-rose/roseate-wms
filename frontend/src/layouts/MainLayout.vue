@@ -7,17 +7,15 @@ import { getStoredRole } from "../auth/session";
 const route = useRoute();
 const role = getStoredRole();
 
+// Sidebar order requirement:
+// Home (dashboard) -> Products -> Orders -> Stock -> Other -> Settings
 const navItems = [
   { name: "home", label: "首页", path: "/" },
   { name: "products", label: "商品", path: "/products" },
   { name: "orders", label: "订单", path: "/orders" },
-  { name: "data", label: "数据", path: "/data" },
-  { name: "channels", label: "渠道", path: "/channels" },
-  { name: "finance", label: "财务统计", path: "/finance", adminOnly: true },
-  { name: "settings", label: "用户设置", path: "/settings", adminOnly: true },
-  { name: "inbound", label: "入库", path: "/inbound" },
-  { name: "outbound", label: "出库", path: "/outbound" },
   { name: "stock", label: "库存", path: "/stock" },
+  { name: "other", label: "其他", path: "/other" },
+  { name: "settings", label: "设置", path: "/settings", adminOnly: true },
 ];
 
 const visibleSidebarItems = computed(() =>
@@ -25,7 +23,7 @@ const visibleSidebarItems = computed(() =>
 );
 const visibleMobileItems = computed(() =>
   visibleSidebarItems.value.filter((item) =>
-    ["/", "/products", "/orders", "/inbound", "/stock"].includes(item.path),
+    ["/", "/products", "/orders", "/stock", "/other"].includes(item.path),
   ),
 );
 const activePath = computed(() => route.path);
@@ -39,6 +37,10 @@ function isActive(path) {
 }
 
 const currentLabel = computed(() => {
+  if (route.meta?.title) {
+    return route.meta.title;
+  }
+
   const matchedItem = visibleSidebarItems.value.find((item) => isActive(item.path));
   return matchedItem?.label || "工作台";
 });
