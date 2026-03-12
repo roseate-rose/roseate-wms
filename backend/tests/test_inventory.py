@@ -1,8 +1,19 @@
+import csv
 from datetime import date, timedelta
 from io import BytesIO
+from io import StringIO
 
 from backend.extensions import db
-from backend.models import Batch, ChannelMapping, InventoryTransaction, OrderAllocation, SalesOrder, Product
+from backend.models import (
+    Batch,
+    ChannelMapping,
+    InboundLine,
+    InboundReceipt,
+    InventoryTransaction,
+    OrderAllocation,
+    SalesOrder,
+    Product,
+)
 
 
 def test_create_product(client, auth_headers):
@@ -512,3 +523,202 @@ def test_fulfill_logic(client, auth_headers, app):
         assert order.status == "fulfilled"
         assert len(transactions) == 1
         assert transactions[0].quantity == 3
+
+
+def test_inbound_creates_receipt_line_and_in_transaction(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HB12001",
+            "barcode": "6900000000012",
+            "name": "入库台账测试品",
+            "spec": "10ml",
+            "unit": "支",
+            "base_unit": "支",
+            "purchase_unit": "盒",
+            "conversion_rate": 10,
+        },
+        headers=auth_headers,
+    )
+
+    response = client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB12001",
+            "batch_no": "IN-LOT-001",
+            "expiry_date": "2027-01-01",
+            "quantity": 1,
+            "cost": 9.9,
+            "unit_type": "purchase",
+            "supplier_name": "测试供应商",
+            "remark": "首次入库",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()["data"]
+    assert payload["receipt"]["receipt_no"].startswith("IN-")
+    assert payload["normalized_quantity"] == 10
+
+    with app.app_context():
+        receipt = InboundReceipt.query.filter_by(receipt_no=payload["receipt"]["receipt_no"]).first()
+        assert receipt is not None
+        assert receipt.supplier_name == "测试供应商"
+
+        line = InboundLine.query.filter_by(receipt_id=receipt.id).first()
+        assert line is not None
+        assert line.hb_code == "HB12001"
+        assert line.normalized_quantity == 10
+        assert line.unit_cost == 9.9
+
+        tx = InventoryTransaction.query.filter_by(transaction_type="IN", batch_id=line.batch_id).first()
+        assert tx is not None
+        assert tx.quantity == 10
+        assert tx.get_extra_data()["doc_no"] == receipt.receipt_no
+
+
+def test_ledger_export_running_balance_product_scope(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HB13001",
+            "barcode": "6900000000013",
+            "name": "台账结存测试品",
+            "spec": "80ml",
+            "unit": "瓶",
+            "base_unit": "瓶",
+            "purchase_unit": "盒",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-SKU-13001",
+            "hb_code": "HB13001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB13001",
+            "batch_no": "LEDGER-LOT",
+            "expiry_date": "2027-03-01",
+            "quantity": 10,
+            "cost": 5.0,
+            "unit_type": "base",
+        },
+        headers=auth_headers,
+    )
+
+    sync_response = client.post(
+        "/api/v1/orders/sync",
+        json={"channel_name": "抖音", "external_sku_id": "DY-SKU-13001", "quantity": 3},
+        headers=auth_headers,
+    )
+    order_id = sync_response.get_json()["data"]["order"]["id"]
+    client.post(
+        "/api/v1/orders/fulfill",
+        json={"order_id": order_id},
+        headers=auth_headers,
+    )
+
+    export_response = client.get(
+        "/api/v1/reports/ledger-export?format=csv&balance_scope=product&include_batch=1",
+        headers=auth_headers,
+    )
+    assert export_response.status_code == 200
+
+    reader = csv.DictReader(StringIO(export_response.get_data(as_text=True)))
+    rows = list(reader)
+    rows = [row for row in rows if row["商品编码"] == "HB13001"]
+    assert len(rows) == 2
+
+    # IN then OUT => 10 then 7
+    assert int(float(rows[0]["结存数量"])) == 10
+    assert int(float(rows[1]["结存数量"])) == 7
+
+
+def test_ledger_export_running_balance_batch_scope(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HB14001",
+            "barcode": "6900000000014",
+            "name": "批次结存测试品",
+            "spec": "30ml",
+            "unit": "支",
+            "base_unit": "支",
+            "purchase_unit": "盒",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-SKU-14001",
+            "hb_code": "HB14001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB14001",
+            "batch_no": "BATCH-A",
+            "expiry_date": "2027-01-01",
+            "quantity": 5,
+            "cost": 10.0,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB14001",
+            "batch_no": "BATCH-B",
+            "expiry_date": "2027-06-01",
+            "quantity": 6,
+            "cost": 10.0,
+        },
+        headers=auth_headers,
+    )
+
+    sync_response = client.post(
+        "/api/v1/orders/sync",
+        json={"channel_name": "抖音", "external_sku_id": "DY-SKU-14001", "quantity": 3},
+        headers=auth_headers,
+    )
+    order_id = sync_response.get_json()["data"]["order"]["id"]
+    client.post(
+        "/api/v1/orders/fulfill",
+        json={"order_id": order_id},
+        headers=auth_headers,
+    )
+
+    export_response = client.get(
+        "/api/v1/reports/ledger-export?format=csv&balance_scope=batch&include_batch=1",
+        headers=auth_headers,
+    )
+    assert export_response.status_code == 200
+
+    reader = csv.DictReader(StringIO(export_response.get_data(as_text=True)))
+    rows = [row for row in reader if row["商品编码"] == "HB14001"]
+    assert len(rows) == 3
+
+    by_batch = {}
+    for row in rows:
+        batch_no = row.get("批次号") or ""
+        if not batch_no:
+            continue
+        by_batch.setdefault(batch_no, []).append(int(float(row["结存数量"])))
+
+    assert by_batch["BATCH-A"][0] == 5
+    assert by_batch["BATCH-A"][-1] == 2
+    assert by_batch["BATCH-B"][0] == 6

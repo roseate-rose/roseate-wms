@@ -117,6 +117,12 @@ roseate-wms/
 - 字段：`id`, `hb_code`, `batch_id`, `order_id`, `transaction_type`, `quantity`, `extra_data`
 - 当前阶段用于发货时生成 `OUT` 流水
 
+### `InboundReceipt` / `InboundLine`
+- 用途：记录入库单据与入库明细行，给台账导出提供“单据编号”和可追溯的入库来源
+- 关键字段：
+  - `InboundReceipt.receipt_no`（入库单号）
+  - `InboundLine.hb_code / batch_id / normalized_quantity / unit_cost`
+
 ## API
 
 所有响应统一为：
@@ -140,6 +146,8 @@ roseate-wms/
 - `POST /api/v1/inventory/inbound`
   - 接收 `unit_type`：`base` / `purchase`
   - `purchase` 会按 `quantity * conversion_rate` 转为最小单位入库
+  - 可选传入 `receipt_no`（用于把多行入库归并到同一张入库单）
+  - 会自动写入一条 `IN` 类型的 `InventoryTransaction`（用于台账与结存计算）
 - `POST /api/v1/inventory/reserve`
   - 按 FIFO 顺序预占可售库存
   - 只增加 `reserved_quantity`，不减少 `current_quantity`
@@ -183,6 +191,13 @@ roseate-wms/
 - `GET /api/v1/reports/export`
   - 查询参数：`format=csv|xlsx`
   - 导出 `Product + Batch` 全量库存与批次数据
+  - 仅 `admin` 可调用
+- `GET /api/v1/reports/ledger-export`
+  - 查询参数：
+    - `format=csv|xlsx`
+    - `balance_scope=product|batch`（结存口径）
+    - `include_batch=1`（可选：追加导出批次号和到期日列）
+  - 导出出入库台账（参考模板表头），并计算运行中的结存数量
   - 仅 `admin` 可调用
 
 ### Channel Mapping
@@ -275,13 +290,15 @@ docker run --rm -p 8000:8000 -v "$(pwd)/instance:/app/instance" roseate-wms
 
 - 应用名：`roseate-wms`
 - 容器内部服务端口：`8000`
+- 默认区域：`sin`（新加坡，香港不可用时的最近区域）
+- 机器规格：`shared-cpu-1x` / `256MB`
 - 挂载卷：`roseate_storage -> /app/instance`
 - 环境变量：`DATABASE_URL=sqlite:////app/instance/wms.db`
 
 Fly 部署前需要先创建持久化卷，例如：
 
 ```bash
-fly volumes create roseate_storage --size 1
+fly volumes create roseate_storage --size 1 --region sin
 fly deploy
 ```
 

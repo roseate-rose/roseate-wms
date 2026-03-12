@@ -206,6 +206,78 @@ class ChannelMapping(ExtraDataMixin, db.Model):
         }
 
 
+class InboundReceipt(TimestampMixin, ExtraDataMixin, db.Model):
+    __tablename__ = "inbound_receipts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    receipt_no = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    received_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    supplier_name = db.Column(db.String(120), nullable=True, index=True)
+    remark = db.Column(db.String(255), nullable=True)
+
+    lines = db.relationship(
+        "InboundLine",
+        back_populates="receipt",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="InboundLine.id.asc()",
+    )
+
+    def to_dict(self, include_lines=False):
+        payload = {
+            "id": self.id,
+            "receipt_no": self.receipt_no,
+            "received_at": self.received_at.isoformat() if self.received_at else None,
+            "supplier_name": self.supplier_name,
+            "remark": self.remark,
+            "extra_data": self.get_extra_data(),
+        }
+
+        if include_lines:
+            payload["lines"] = [line.to_dict() for line in self.lines]
+
+        return payload
+
+
+class InboundLine(TimestampMixin, ExtraDataMixin, db.Model):
+    __tablename__ = "inbound_lines"
+
+    id = db.Column(db.Integer, primary_key=True)
+    receipt_id = db.Column(db.Integer, db.ForeignKey("inbound_receipts.id"), nullable=False, index=True)
+    hb_code = db.Column(db.String(50), db.ForeignKey("products.hb_code"), nullable=False, index=True)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batches.id"), nullable=True, index=True)
+
+    batch_no = db.Column(db.String(80), nullable=False)
+    production_date = db.Column(db.Date, nullable=True)
+    expiry_date = db.Column(db.Date, nullable=False, index=True)
+
+    unit_type = db.Column(db.String(20), nullable=False, default="base")
+    quantity_input = db.Column(db.Integer, nullable=False, default=0)
+    normalized_quantity = db.Column(db.Integer, nullable=False, default=0)
+    unit_cost = db.Column(db.Float, nullable=False, default=0.0)
+
+    receipt = db.relationship("InboundReceipt", back_populates="lines")
+    product = db.relationship("Product", lazy="selectin")
+    batch = db.relationship("Batch", lazy="selectin")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "receipt_id": self.receipt_id,
+            "hb_code": self.hb_code,
+            "batch_id": self.batch_id,
+            "batch_no": self.batch_no,
+            "production_date": self.production_date.isoformat() if self.production_date else None,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "unit_type": self.unit_type,
+            "quantity_input": self.quantity_input,
+            "normalized_quantity": self.normalized_quantity,
+            "unit_cost": self.unit_cost,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "extra_data": self.get_extra_data(),
+        }
+
+
 class SalesOrder(TimestampMixin, ExtraDataMixin, db.Model):
     __tablename__ = "sales_orders"
 

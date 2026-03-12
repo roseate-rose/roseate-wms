@@ -105,7 +105,17 @@
 - How: Added `fly.toml` with app name `roseate-wms`, `roseate_storage` mounted at `/app/instance`, and `DATABASE_URL=sqlite:////app/instance/wms.db`. Updated `Dockerfile` so Gunicorn binds to `0.0.0.0:8000` and exposed port `8000`, then documented the Fly workflow in `README.md`.
 - Result: The repo now contains a coherent Fly.io deployment config where the declared internal service port matches the Gunicorn listener and SQLite points at the mounted persistent volume.
 
-## 2026-03-09 Fly.io Deploy Script
+## 2026-03-10 Fly.io Deploy Script
 - Why: Repeating the Fly volume bootstrap and deploy commands manually is error-prone, and JWT secret setup needs to be called out explicitly so deployment is not left with a weak default.
-- How: Added a root `deploy.sh` that checks for `flyctl`, ensures the `roseate_storage` volume exists for `roseate-wms`, and then runs `flyctl deploy`. Updated `README.md` with script usage and the required `flyctl secrets set JWT_SECRET_KEY=...` command.
-- Result: The repository now includes a minimal deployment helper for Fly.io plus explicit operator guidance for configuring the JWT secret outside the repo.
+- How: Added a root `deploy.sh` that checks for `flyctl`, ensures the `roseate_storage` volume exists for `roseate-wms`, and then runs `flyctl deploy`. Updated the script to pass `--yes` so non-interactive deployments can proceed. Updated `README.md` with script usage and the required `flyctl secrets set JWT_SECRET_KEY=...` command. Aligned `fly.toml` to use the `sin` region (closest available to Hong Kong) with `shared-cpu-1x` / `256MB` for a low-cost footprint.
+- Result: The repository now includes a minimal deployment helper for Fly.io plus explicit operator guidance for configuring the JWT secret outside the repo, and the default Fly config targets Singapore with a small VM size.
+
+## 2026-03-10 Fly.io Deployment Execution
+- Why: The application needed to be deployed to the `roseate` org with a low-cost VM in the closest available region to Hong Kong.
+- How: Verified Fly org access, staged a JWT secret, created the `roseate_storage` volume in `sin`, and deployed the app with `flyctl deploy`. Confirmed the running machine via `flyctl status`.
+- Result: `roseate-wms` is running in `sin` with a single shared-cpu-1x machine, and is reachable at `https://roseate-wms.fly.dev/`.
+
+## 2026-03-12 Inbound Receipts & Ledger Export
+- Why: The ledger-style table header requires a document-numbered IN/OUT trace and a deterministic running-balance calculation; without inbound receipts and IN transactions, export would be incomplete.
+- How: Added `InboundReceipt` and `InboundLine` models in `backend/models.py`, updated `/api/v1/inventory/inbound` to create receipt/line records and write `InventoryTransaction(transaction_type=\"IN\")`, enriched OUT transactions with `doc_no` metadata, and implemented `/api/v1/reports/ledger-export` supporting `balance_scope=product|batch` (plus optional batch columns). Added pytest coverage for receipt creation and running balances.
+- Result: Backend tests pass with 20 tests and the new ledger export endpoint can generate CSV/XLSX matching the reference header while computing on-the-fly balances.

@@ -3,6 +3,7 @@ from functools import wraps
 from io import BytesIO
 import os
 from pathlib import Path
+import secrets
 import sys
 
 if __package__ in {None, ""}:
@@ -21,6 +22,8 @@ from backend.extensions import db, jwt
 from backend.models import (
     Batch,
     ChannelMapping,
+    InboundLine,
+    InboundReceipt,
     InventoryTransaction,
     OrderAllocation,
     Product,
@@ -244,6 +247,7 @@ def fulfill_sales_order(order):
         batch.reserved_quantity -= allocation.quantity
         batch.current_quantity -= allocation.quantity
 
+        doc_no = f"SO-{order.id}"
         transaction = InventoryTransaction(
             hb_code=order.hb_code,
             batch_id=batch.id,
@@ -253,6 +257,8 @@ def fulfill_sales_order(order):
         )
         transaction.set_extra_data(
             {
+                "doc_type": "sales_order",
+                "doc_no": doc_no,
                 "channel_name": order.channel_name,
                 "external_sku_id": order.external_sku_id,
             }
@@ -319,6 +325,176 @@ def build_export_rows():
                 }
             )
     return rows
+
+
+LEDGER_BASE_COLUMNS = [
+    "操作日期",
+    "单据编号",
+    "商品编码",
+    "商品名称",
+    "规格型号",
+    "单位",
+    "入库数量",
+    "出库数量",
+    "结存数量",
+    "入库单价",
+    "出库单价",
+    "操作类型",
+    "来源",
+    "去向",
+    "供应商",
+    "客户",
+    "备注",
+    "其他说明",
+    "进货金额汇总",
+    "向供应商付款记录",
+]
+
+
+def transaction_delta(transaction_type: str, quantity: int) -> int:
+    if transaction_type in {"IN", "ADJUST_IN"}:
+        return quantity
+    if transaction_type in {"OUT", "ADJUST_OUT"}:
+        return -quantity
+    return 0
+
+
+def transaction_operation_label(transaction_type: str) -> str:
+    mapping = {
+        "IN": "入库",
+        "OUT": "出库",
+        "ADJUST_IN": "盘盈",
+        "ADJUST_OUT": "盘亏",
+        "COUNT": "盘点",
+    }
+    return mapping.get(transaction_type, transaction_type)
+
+
+def build_ledger_rows(balance_scope="product", include_batch=False):
+    include_batch = bool(include_batch)
+    columns = list(LEDGER_BASE_COLUMNS)
+    if include_batch:
+        columns.extend(["批次号", "到期日"])
+
+    balances = {}
+    transactions = (
+        InventoryTransaction.query.order_by(
+            InventoryTransaction.created_at.asc(),
+            InventoryTransaction.id.asc(),
+        )
+        .all()
+    )
+
+    rows = []
+    for tx in transactions:
+        extra = tx.get_extra_data()
+        product = tx.product
+        batch = tx.batch
+
+        doc_no = extra.get("doc_no")
+        if not doc_no and tx.order_id:
+            doc_no = f"SO-{tx.order_id}"
+        if not doc_no:
+            doc_no = f"TX-{tx.id}"
+
+        in_qty = tx.quantity if tx.transaction_type in {"IN", "ADJUST_IN"} else 0
+        out_qty = tx.quantity if tx.transaction_type in {"OUT", "ADJUST_OUT"} else 0
+
+        key = tx.hb_code
+        if balance_scope == "batch":
+            key = tx.batch_id or tx.hb_code
+
+        balances[key] = balances.get(key, 0) + transaction_delta(tx.transaction_type, tx.quantity)
+
+        unit_cost_in = extra.get("unit_cost")
+        if unit_cost_in is None and tx.transaction_type == "IN" and batch:
+            unit_cost_in = batch.cost
+
+        unit_price_out = extra.get("unit_price_out") or extra.get("unit_price")
+
+        supplier_name = extra.get("supplier_name") or extra.get("supplier")
+        customer_name = extra.get("customer_name") or extra.get("customer")
+
+        source = extra.get("source") or (extra.get("channel_name") if tx.transaction_type == "OUT" else "采购入库")
+        destination = extra.get("destination") or ""
+
+        remark = extra.get("remark") or ""
+        other_note = extra.get("other_note") or ""
+
+        inbound_amount = ""
+        if tx.transaction_type == "IN" and unit_cost_in is not None:
+            try:
+                inbound_amount = round(float(unit_cost_in) * int(tx.quantity), 2)
+            except (TypeError, ValueError):
+                inbound_amount = ""
+
+        row = {
+            "操作日期": tx.created_at.date().isoformat() if tx.created_at else None,
+            "单据编号": doc_no,
+            "商品编码": tx.hb_code,
+            "商品名称": product.name if product else None,
+            "规格型号": product.spec if product else None,
+            "单位": product.base_unit if product else None,
+            "入库数量": in_qty,
+            "出库数量": out_qty,
+            "结存数量": balances[key],
+            "入库单价": unit_cost_in if unit_cost_in is not None else "",
+            "出库单价": unit_price_out if unit_price_out is not None else "",
+            "操作类型": transaction_operation_label(tx.transaction_type),
+            "来源": source,
+            "去向": destination,
+            "供应商": supplier_name or "",
+            "客户": customer_name or "",
+            "备注": remark,
+            "其他说明": other_note,
+            "进货金额汇总": inbound_amount,
+            "向供应商付款记录": "",
+        }
+
+        if include_batch:
+            row["批次号"] = batch.batch_no if batch else ""
+            row["到期日"] = batch.expiry_date.isoformat() if batch and batch.expiry_date else ""
+
+        rows.append(row)
+
+    return columns, rows
+
+
+def generate_inbound_receipt_no(now=None):
+    now = now or datetime.utcnow()
+    return f"IN-{now.strftime('%Y%m%d')}-{now.strftime('%H%M%S')}-{secrets.token_hex(3)}"
+
+
+def get_or_create_inbound_receipt(payload):
+    receipt_no = (payload.get("receipt_no") or "").strip()
+    supplier_name = (payload.get("supplier_name") or "").strip() or None
+    remark = (payload.get("remark") or "").strip() or None
+    extra_data = payload.get("receipt_extra_data") or {}
+
+    if receipt_no:
+        receipt = InboundReceipt.query.filter_by(receipt_no=receipt_no).first()
+        if receipt:
+            return receipt
+
+        receipt = InboundReceipt(
+            receipt_no=receipt_no,
+            supplier_name=supplier_name,
+            remark=remark,
+        )
+        receipt.set_extra_data(extra_data)
+        db.session.add(receipt)
+        db.session.flush()
+        return receipt
+
+    receipt = InboundReceipt(
+        receipt_no=generate_inbound_receipt_no(),
+        supplier_name=supplier_name,
+        remark=remark,
+    )
+    receipt.set_extra_data(extra_data)
+    db.session.add(receipt)
+    db.session.flush()
+    return receipt
 
 
 def resolve_frontend_dist_dir(config=None):
@@ -591,6 +767,50 @@ def register_routes(app):
             batch.set_extra_data(extra_data)
             db.session.add(batch)
 
+        # Ensure we have a batch id for receipt lines and transactions.
+        db.session.flush()
+
+        receipt = get_or_create_inbound_receipt(payload)
+
+        line = InboundLine(
+            receipt_id=receipt.id,
+            hb_code=product.hb_code,
+            batch_id=batch.id,
+            batch_no=batch_no,
+            production_date=production_date,
+            expiry_date=expiry_date,
+            unit_type=unit_type,
+            quantity_input=quantity,
+            normalized_quantity=normalized_quantity,
+            unit_cost=cost,
+        )
+        line.set_extra_data(
+            {
+                "action": action,
+                "barcode": (payload.get("barcode") or "").strip() or None,
+            }
+        )
+        db.session.add(line)
+
+        inbound_tx = InventoryTransaction(
+            hb_code=product.hb_code,
+            batch_id=batch.id,
+            order_id=None,
+            transaction_type="IN",
+            quantity=normalized_quantity,
+        )
+        inbound_tx.set_extra_data(
+            {
+                "doc_type": "inbound_receipt",
+                "doc_no": receipt.receipt_no,
+                "supplier_name": receipt.supplier_name,
+                "unit_type": unit_type,
+                "quantity_input": quantity,
+                "unit_cost": cost,
+            }
+        )
+        db.session.add(inbound_tx)
+
         db.session.commit()
 
         return api_response(
@@ -598,6 +818,7 @@ def register_routes(app):
                 "action": action,
                 "product": product.to_dict(include_stock=True),
                 "batch": batch.to_dict(),
+                "receipt": receipt.to_dict(),
                 "normalized_quantity": normalized_quantity,
                 "unit_type": unit_type,
             }
@@ -826,6 +1047,47 @@ def register_routes(app):
             output,
             as_attachment=True,
             download_name="roseate_report.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.get("/api/v1/reports/ledger-export")
+    @admin_required
+    def export_ledger_report():
+        export_format = (request.args.get("format") or "csv").strip().lower()
+        if export_format not in {"csv", "xlsx"}:
+            return api_response(code=400, msg="format must be one of: csv, xlsx")
+
+        balance_scope = (request.args.get("balance_scope") or "product").strip().lower()
+        if balance_scope not in {"product", "batch"}:
+            return api_response(code=400, msg="balance_scope must be one of: product, batch")
+
+        include_batch = (request.args.get("include_batch") or "").strip().lower() in {"1", "true", "yes"}
+
+        columns, rows = build_ledger_rows(balance_scope=balance_scope, include_batch=include_batch)
+
+        try:
+            import pandas as pd
+        except ImportError:
+            return api_response(code=500, msg="pandas is required for export")
+
+        dataframe = pd.DataFrame(rows, columns=columns)
+
+        if export_format == "csv":
+            csv_payload = dataframe.to_csv(index=False)
+            return Response(
+                csv_payload,
+                mimetype="text/csv",
+                headers={"Content-Disposition": "attachment; filename=roseate_ledger.csv"},
+            )
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            dataframe.to_excel(writer, index=False, sheet_name="ledger")
+        output.seek(0)
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name="roseate_ledger.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
