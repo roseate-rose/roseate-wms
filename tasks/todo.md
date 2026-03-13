@@ -65,3 +65,12 @@
 - [ ] Frontend: add “批量订单导入” 页面（/orders-import），支持菜鸟/顺丰模板通过映射适配（后续可加 preset）
 - [ ] Docs: update README with new endpoints + expected template columns; update devlog
 - [ ] Verify: backend pytest + frontend build; then commit in two batches (backend then frontend) and deploy to Fly
+
+---
+
+# WebTest Bug Tracking Todo
+
+## Scope
+- [x] Add `tasks/webtest-bugs.md` as the single source of truth for webtest bug progress in this repo
+- [x] Re-scan webtest bug list and sync remaining open items into tracker
+- [ ] Get confirmation and implement remaining BUG-03/04/05 + OBS-01/02 fixes in roseate-wms

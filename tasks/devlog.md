@@ -144,3 +144,8 @@
 - Why: WebTest discovered two edge regressions: merging the same expiry batch overwrote `cost` instead of computing a weighted average, and batches expiring today were classified as `warning` instead of `expired`.
 - How: Updated `apply_inbound_payload()` in `backend/app.py` and the `accumulate` branch in `backend/services/import_service.py` to compute weighted average cost on merges. Updated `classify_expiry_status()` in `backend/services/import_service.py` to treat `expiry_date == today` as `expired`. Added pytest regression coverage in `backend/tests/test_inventory.py`.
 - Result: `python3 -m pytest backend/tests` passes (25 tests). `npm run build` passes.
+
+## 2026-03-13 WebTest Feedback Tracker
+- Why: We need a single place in this repo to track bugfix progress driven by `roseate-wms-webtest`, while keeping the webtest repo read-only.
+- How: Added `tasks/webtest-bugs.md` to record bug IDs, severity, status, fix commit hashes, and pending confirmation items (idempotency/RBAC decisions).
+- Result: Tracker is in place; future webtest findings can be triaged and progressed without editing the webtest repo.
