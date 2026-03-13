@@ -46,6 +46,8 @@ roseate-wms/
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── import_service.py
+│   │   ├── inbound_import_service.py
+│   │   ├── order_import_service.py
 │   │   └── product_import_service.py
 │   └── tests/
 │       ├── conftest.py
@@ -71,10 +73,12 @@ roseate-wms/
 │           ├── DataManagementView.vue
 │           ├── FinanceView.vue
 │           ├── HomeView.vue
+│           ├── InboundImportView.vue
 │           ├── InboundView.vue
 │           ├── LoginView.vue
 │           ├── OtherView.vue
 │           ├── OrdersView.vue
+│           ├── OrdersImportView.vue
 │           ├── OutboundView.vue
 │           ├── ProductDetailView.vue
 │           ├── ProductsView.vue
@@ -161,6 +165,16 @@ roseate-wms/
   - `purchase` 会按 `quantity * conversion_rate` 转为最小单位入库
   - 可选传入 `receipt_no`（用于把多行入库归并到同一张入库单）
   - 会自动写入一条 `IN` 类型的 `InventoryTransaction`（用于台账与结存计算）
+- `POST /api/v1/inventory/inbound-import/preview`
+  - `multipart/form-data`
+  - 字段：`file`, `mapping`(JSON，可选), `receipt_no`(可选), `supplier_name`(可选), `remark`(可选)
+  - 支持 CSV / Excel。通过 `mapping` 将你的列名映射为系统字段（适配菜鸟/顺丰等模板）
+  - 返回列名、有效映射、前 5 条预览和错误摘要
+- `POST /api/v1/inventory/inbound-import`
+  - `multipart/form-data`
+  - 字段同 preview
+  - 会生成入库单与明细行，并写入 `IN` 流水
+  - 未映射列会写入 `line_extra_data.row_extra`，为未来接入物流/供应链 API 预留
 - `POST /api/v1/inventory/reserve`
   - 按 FIFO 顺序预占可售库存
   - 只增加 `reserved_quantity`，不减少 `current_quantity`
@@ -196,6 +210,14 @@ roseate-wms/
 - `POST /api/v1/orders/sync`
   - 接收 `channel_name`, `external_sku_id`, `quantity`
   - 通过 `ChannelMapping` 查找商品并按 FIFO 生成预占
+- `POST /api/v1/orders/import/preview`
+  - `multipart/form-data`
+  - 字段：`file`, `mapping`(JSON，可选), `default_channel_name`(可选), `template`(可选)
+  - 预览时会检查渠道映射是否存在，并对可售库存做粗略预估（产品级别）
+- `POST /api/v1/orders/import`
+  - `multipart/form-data`
+  - 字段同 preview
+  - 批量创建并预占订单；未映射列会写入订单 `extra_data.row_extra`，便于后续对接物流商 API
 - `POST /api/v1/orders/fulfill`
   - 接收 `order_id`
   - 将预占记录核销为真实出库，并减少 `current_quantity` 与 `reserved_quantity`
@@ -227,8 +249,10 @@ roseate-wms/
 - `/channels`：渠道映射管理
 - `/data`：CSV 数据导入页，先预览后保存
 - `/orders`：渠道订单列表，支持同步订单与发货核销
+- `/orders-import`：批量订单导入（列映射适配菜鸟/顺丰模板）
 - `/finance`：财务统计入口，仅管理员可见
 - `/inbound`：H5 优先入库流程，支持采购单位和最小单位切换
+- `/inbound-import`：批量入库导入（生成入库单、入库明细与 IN 流水）
 - `/settings`：用户设置入口，仅管理员可见
 - `/stock`：到期报表页，支持状态筛选与红/黄/绿行背景
 - `/outbound`：后续阶段入口
@@ -341,7 +365,7 @@ flyctl secrets set JWT_SECRET_KEY='replace-with-a-long-random-secret' --app rose
 - `inventory/import`（批次库存导入）假设商品档案已存在；该导入不会自动创建商品。商品建档可使用 `products/import`（商品档案导入）。
 
 ## 验证结果
-- `python3 -m pytest backend/tests` 通过（21 tests）
+- `python3 -m pytest backend/tests` 通过（23 tests）
 - `npm run build` 通过
 - 管理员报表导出已用 Flask test client 实测，`csv` 与 `xlsx` 都返回 `200`
 

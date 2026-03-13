@@ -51,3 +51,17 @@
 ## Review / Summary
 - [x] `python3 -m pytest backend/tests` passes (21 tests)
 - [x] `npm run build` passes
+
+---
+
+# Bulk Inbound + Bulk Orders Import Todo
+
+## Scope
+- [ ] Backend: add inbound bulk import endpoints (upload -> preview -> commit) that generate `InboundReceipt/InboundLine/InventoryTransaction(IN)` like single inbound
+- [ ] Backend: add orders bulk import endpoints (upload -> preview -> commit) that resolve `ChannelMapping` and reserve FIFO stock like `/orders/sync`
+- [ ] Backend: support column mapping (user can choose which columns map to required fields) and preserve unmapped columns into `extra_data` for future logistics API integration
+- [ ] Backend tests: cover unit conversion, batch merge in bulk inbound, and channel mapping lookup + reservation in bulk orders import
+- [ ] Frontend: add “批量入库导入” 页面（/inbound-import），支持映射调整与预览
+- [ ] Frontend: add “批量订单导入” 页面（/orders-import），支持菜鸟/顺丰模板通过映射适配（后续可加 preset）
+- [ ] Docs: update README with new endpoints + expected template columns; update devlog
+- [ ] Verify: backend pytest + frontend build; then commit in two batches (backend then frontend) and deploy to Fly

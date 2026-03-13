@@ -15,10 +15,22 @@ const items = computed(() => {
       tag: "H5",
     },
     {
+      title: "批量入库导入",
+      desc: "上传表格批量入库，支持列映射以适配不同模板。",
+      to: "/inbound-import",
+      tag: "Web",
+    },
+    {
       title: "出库",
       desc: "后续阶段入口或操作汇总。",
       to: "/outbound",
       tag: "WIP",
+    },
+    {
+      title: "批量订单导入",
+      desc: "上传菜鸟/顺丰等模板并映射字段，批量锁定 FIFO 库存。",
+      to: "/orders-import",
+      tag: "Web",
     },
     {
       title: "数据管理",
@@ -86,4 +98,3 @@ const items = computed(() => {
     </div>
   </section>
 </template>
-

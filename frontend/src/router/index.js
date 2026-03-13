@@ -81,10 +81,22 @@ const routes = [
         meta: { title: "入库" },
       },
       {
+        path: "inbound-import",
+        name: "inbound-import",
+        component: () => import("../views/InboundImportView.vue"),
+        meta: { title: "批量入库导入" },
+      },
+      {
         path: "outbound",
         name: "outbound",
         component: () => import("../views/OutboundView.vue"),
         meta: { title: "出库" },
+      },
+      {
+        path: "orders-import",
+        name: "orders-import",
+        component: () => import("../views/OrdersImportView.vue"),
+        meta: { title: "批量订单导入" },
       },
       {
         path: "changelog",
