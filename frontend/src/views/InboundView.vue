@@ -255,6 +255,9 @@ async function createQuickMapping() {
             >
               前往商品中心建档
             </button>
+            <p v-if="!isAdmin" class="self-center text-sm text-slate-500">
+              当前账号不是管理员，无法建档；请联系管理员创建商品档案。
+            </p>
             <button
               v-if="isAdmin"
               type="button"

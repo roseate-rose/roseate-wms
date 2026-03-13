@@ -102,12 +102,16 @@ def find_product(payload):
     if hb_code:
         product = Product.query.filter_by(hb_code=hb_code).first()
         if product:
-            return product
+            return product, None, None
 
     if barcode:
-        return Product.query.filter_by(barcode=barcode).first()
+        matches = Product.query.filter_by(barcode=barcode).order_by(Product.hb_code.asc()).all()
+        if len(matches) == 1:
+            return matches[0], None, None
+        if len(matches) > 1:
+            return None, "barcode is not unique; please use hb_code", 409
 
-    return None
+    return None, None, None
 
 
 def normalize_inbound_quantity(product, quantity, unit_type):
@@ -283,7 +287,9 @@ def apply_inbound_payload(payload, *, receipt=None):
     Does not commit. Returns (result, error_message, http_code).
     """
 
-    product = find_product(payload)
+    product, product_error, product_http = find_product(payload)
+    if product_error:
+        return None, product_error, product_http or 400
     if not product:
         return None, "product not found", 404
 
@@ -784,20 +790,17 @@ def register_routes(app):
             }
         )
 
-    @app.get("/api/v1/inventory/test")
-    @jwt_required()
-    def inventory_test():
-        claims = get_jwt()
-        return api_response(
-            data={
-                "message": "inventory test endpoint is protected",
-                "current_user": {
-                    "id": get_jwt_identity(),
-                    "username": claims.get("username"),
-                    "role": claims.get("role"),
-                },
-            }
-        )
+    if app.config.get("ENABLE_DEBUG_ENDPOINTS") or app.debug or app.testing:
+        @app.get("/api/v1/inventory/test")
+        @jwt_required()
+        def inventory_test():
+            # Debug-only endpoint: avoid leaking user identity details.
+            return api_response(
+                data={
+                    "message": "inventory test endpoint is protected",
+                    "user_id": get_jwt_identity(),
+                }
+            )
 
     @app.get("/api/v1/products")
     @jwt_required()
@@ -842,7 +845,7 @@ def register_routes(app):
         )
 
     @app.post("/api/v1/products")
-    @jwt_required()
+    @admin_required
     def create_product():
         payload = request.get_json(silent=True) or {}
 
@@ -870,6 +873,9 @@ def register_routes(app):
 
         if Product.query.filter_by(hb_code=hb_code).first():
             return api_response(code=409, msg="product hb_code already exists")
+
+        if barcode and Product.query.filter_by(barcode=barcode).first():
+            return api_response(code=409, msg="barcode already exists")
 
         product = Product(
             hb_code=hb_code,
@@ -902,6 +908,8 @@ def register_routes(app):
                 filename=upload.filename or "products.csv",
                 mode=mode,
                 commit=False,
+                product_model=Product,
+                db=db,
             )
         except ValueError as exc:
             return api_response(code=400, msg=str(exc))

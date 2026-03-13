@@ -20,9 +20,9 @@ Legend:
 | BUG-01 | High | Open | fixed | Weighted average cost on batch merge. Commit `28e49eb`. |
 | BUG-02 | Medium | Open | fixed | `expiry_date == today` treated as `expired`. Commit `28e49eb`. |
 | BUG-03 | High | Open | fixed | Idempotency via `external_order_no` using `external_order_refs` table. If caller omits `external_order_no`, behavior remains non-idempotent. Commit `8a3f36a`. |
-| BUG-04 | High | Open | triaged | Barcode uniqueness enforcement: at minimum API-level guard (`409` on duplicate) and disallow ambiguous barcode lookup. DB unique constraint needs migration strategy. |
-| BUG-05 | Medium | Open | triaged | RBAC consistency: align `POST /products` with other admin-only write ops. |
-| OBS-01 | Medium | Open | triaged | `/inventory/test` leaks `username/role`; likely make it DEBUG-only or sanitize response. |
+| BUG-04 | High | Open | fixed | API-level barcode uniqueness + inbound rejects ambiguous barcode. Also product import rejects barcode collisions. Commit TBD. |
+| BUG-05 | Medium | Open | fixed | `POST /api/v1/products` is now admin-only (`@admin_required`). Commit TBD. |
+| OBS-01 | Medium | Open | fixed | `/api/v1/inventory/test` is now debug-only and no longer returns username/role. Commit TBD. |
 | OBS-02 | Medium | Open | fixed | `POST /api/v1/orders/fulfill` is now admin-only (`@admin_required`). Commit `8a3f36a`. |
 
 ## Details

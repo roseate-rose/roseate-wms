@@ -248,6 +248,7 @@ watch(
             查询
           </button>
           <button
+            v-if="isAdmin"
             type="button"
             class="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
             @click="showCreateForm = !showCreateForm"
@@ -370,7 +371,7 @@ watch(
       </div>
     </article>
 
-    <article v-if="showCreateForm" class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
+    <article v-if="showCreateForm && isAdmin" class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
       <h4 class="text-lg font-semibold text-slate-900">新建商品档案</h4>
       <p class="mt-1 text-sm text-slate-500">品牌、产地、过敏原等扩展属性可直接写入 `extra_data` JSON。</p>
 

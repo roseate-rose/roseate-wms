@@ -154,3 +154,8 @@
 - Why: WebTest flagged duplicate order reservations under webhook retries and noted that `staff` could fulfill orders (irreversible stock deduction).
 - How: Added `ExternalOrderRef` table to implement idempotency via `(channel_name, external_order_no)` without requiring a migration on `sales_orders`. Updated `/api/v1/orders/sync` to accept optional `external_order_no` and return `idempotent_replay` when a retry is detected. Restricted `/api/v1/orders/fulfill` to admins via `@admin_required`. Added pytest coverage for idempotent sync and staff fulfill restriction.
 - Result: `python3 -m pytest backend/tests` passes (27 tests). Frontend build unaffected.
+
+## 2026-03-13 Barcode Uniqueness + Product RBAC + Debug Endpoint Hardening
+- Why: WebTest reported barcode collision risks (ambiguous inbound matching), RBAC inconsistency where staff could create products, and a debug endpoint leaking user identity.
+- How: Enforced barcode uniqueness at the API layer (`POST /api/v1/products` rejects duplicates) and made inbound reject ambiguous barcode matches. Updated product import to reject barcode collisions both within the file and against existing data. Switched `POST /api/v1/products` to `@admin_required`. Gated `/api/v1/inventory/test` behind debug/testing and removed username/role from its response. Updated frontend to hide product create UI for non-admin and show a hint on inbound when staff cannot build archives. Added pytest coverage.
+- Result: `python3 -m pytest backend/tests` passes (30 tests). `npm run build` passes.

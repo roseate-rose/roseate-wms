@@ -128,11 +128,42 @@ def import_products_from_file(
     if missing:
         raise ValueError(f"missing required columns: {', '.join(sorted(missing))}")
 
+    # Detect duplicates within the import file itself: barcode must map to a single hb_code.
+    barcode_to_hb = {}
+
     for idx, raw in enumerate(raw_rows, start=1):
         payload, err = normalize_product_row(raw)
         if err:
             errors.append({"row_number": idx, "error": err, "raw": raw})
             continue
+
+        barcode = payload.get("barcode")
+        if barcode:
+            existing_hb = barcode_to_hb.get(barcode)
+            if existing_hb and existing_hb != payload["hb_code"]:
+                errors.append(
+                    {
+                        "row_number": idx,
+                        "error": "barcode collides with another hb_code in the same file",
+                        "raw": raw,
+                    }
+                )
+                continue
+            barcode_to_hb[barcode] = payload["hb_code"]
+
+        # Detect collisions with existing DB (when model is available).
+        if product_model is not None and barcode:
+            existing_by_barcode = product_model.query.filter_by(barcode=barcode).first()
+            if existing_by_barcode and existing_by_barcode.hb_code != payload["hb_code"]:
+                errors.append(
+                    {
+                        "row_number": idx,
+                        "error": "barcode already exists for another hb_code",
+                        "raw": raw,
+                    }
+                )
+                continue
+
         normalized_rows.append(payload)
 
     preview_rows = [
@@ -179,6 +210,19 @@ def import_products_from_file(
                 skipped += 1
                 continue
 
+            # Avoid barcode collisions during overwrite.
+            if row.get("barcode"):
+                other = product_model.query.filter_by(barcode=row["barcode"]).first()
+                if other and other.hb_code != existing.hb_code:
+                    errors.append(
+                        {
+                            "row_number": None,
+                            "error": f"barcode {row['barcode']} already exists for another hb_code",
+                            "raw": {"hb_code": row["hb_code"], "barcode": row["barcode"]},
+                        }
+                    )
+                    continue
+
             existing.barcode = row["barcode"]
             existing.name = row["name"]
             existing.spec = row["spec"]
@@ -190,6 +234,18 @@ def import_products_from_file(
             updated += 1
             imported.append(existing.to_dict(include_stock=True))
             continue
+
+        if row.get("barcode"):
+            other = product_model.query.filter_by(barcode=row["barcode"]).first()
+            if other:
+                errors.append(
+                    {
+                        "row_number": None,
+                        "error": f"barcode {row['barcode']} already exists for another hb_code",
+                        "raw": {"hb_code": row["hb_code"], "barcode": row["barcode"]},
+                    }
+                )
+                continue
 
         product = product_model(
             hb_code=row["hb_code"],
@@ -214,6 +270,8 @@ def import_products_from_file(
             "updated": updated,
             "skipped": skipped,
             "imported_rows": imported[:50],
+            "error_rows": len(errors),
+            "errors": errors[:10],
         }
     )
     return result

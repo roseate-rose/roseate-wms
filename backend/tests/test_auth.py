@@ -1,5 +1,5 @@
 def test_protected_inventory_endpoint_requires_token(client):
-    response = client.get("/api/v1/inventory/test")
+    response = client.get("/api/v1/dashboard/stats")
 
     assert response.status_code == 401
     assert response.get_json() == {
@@ -26,12 +26,12 @@ def test_login_returns_jwt_token_and_allows_access(client):
     token = login_payload["data"]["token"]
 
     protected_response = client.get(
-        "/api/v1/inventory/test",
+        "/api/v1/dashboard/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert protected_response.status_code == 200
-    assert protected_response.get_json()["data"]["current_user"]["role"] == "admin"
+    assert protected_response.get_json()["code"] == 200
 
 
 def test_app_bootstraps_default_admin(app):

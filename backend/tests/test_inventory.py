@@ -1118,3 +1118,98 @@ def test_staff_cannot_fulfill_order(client, auth_headers, staff_auth_headers):
         headers=staff_auth_headers,
     )
     assert forbidden.status_code == 403
+
+
+def test_staff_cannot_create_product(client, staff_auth_headers):
+    response = client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBSTAFF001",
+            "barcode": "6905555555555",
+            "name": "Staff 建档权限测试",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=staff_auth_headers,
+    )
+    assert response.status_code == 403
+
+
+def test_duplicate_barcode_rejected(client, auth_headers):
+    first = client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBBAR001",
+            "barcode": "6906666666666",
+            "name": "条码唯一测试 A",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    assert first.status_code == 201
+
+    dup = client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBBAR002",
+            "barcode": "6906666666666",
+            "name": "条码唯一测试 B",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    assert dup.status_code == 409
+
+
+def test_inbound_ambiguous_barcode_returns_409(client, auth_headers, app):
+    with app.app_context():
+        # Simulate legacy DB state where duplicates already exist.
+        p1 = Product(
+            hb_code="HBLEG001",
+            barcode="6907777777777",
+            name="遗留条码冲突 A",
+            spec="1pc",
+            unit="件",
+            base_unit="件",
+            purchase_unit="箱",
+            conversion_rate=1,
+        )
+        p1.set_extra_data({})
+        p2 = Product(
+            hb_code="HBLEG002",
+            barcode="6907777777777",
+            name="遗留条码冲突 B",
+            spec="1pc",
+            unit="件",
+            base_unit="件",
+            purchase_unit="箱",
+            conversion_rate=1,
+        )
+        p2.set_extra_data({})
+        db.session.add(p1)
+        db.session.add(p2)
+        db.session.commit()
+
+    response = client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "barcode": "6907777777777",
+            "batch_no": "AMB-001",
+            "expiry_date": "2027-01-01",
+            "quantity": 1,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 409
