@@ -57,14 +57,14 @@
 # Bulk Inbound + Bulk Orders Import Todo
 
 ## Scope
-- [ ] Backend: add inbound bulk import endpoints (upload -> preview -> commit) that generate `InboundReceipt/InboundLine/InventoryTransaction(IN)` like single inbound
-- [ ] Backend: add orders bulk import endpoints (upload -> preview -> commit) that resolve `ChannelMapping` and reserve FIFO stock like `/orders/sync`
-- [ ] Backend: support column mapping (user can choose which columns map to required fields) and preserve unmapped columns into `extra_data` for future logistics API integration
-- [ ] Backend tests: cover unit conversion, batch merge in bulk inbound, and channel mapping lookup + reservation in bulk orders import
-- [ ] Frontend: add “批量入库导入” 页面（/inbound-import），支持映射调整与预览
-- [ ] Frontend: add “批量订单导入” 页面（/orders-import），支持菜鸟/顺丰模板通过映射适配（后续可加 preset）
-- [ ] Docs: update README with new endpoints + expected template columns; update devlog
-- [ ] Verify: backend pytest + frontend build; then commit in two batches (backend then frontend) and deploy to Fly
+- [x] Backend: add inbound bulk import endpoints (upload -> preview -> commit) that generate `InboundReceipt/InboundLine/InventoryTransaction(IN)` like single inbound
+- [x] Backend: add orders bulk import endpoints (upload -> preview -> commit) that resolve `ChannelMapping` and reserve FIFO stock like `/orders/sync`
+- [x] Backend: support column mapping (user can choose which columns map to required fields) and preserve unmapped columns into `extra_data` for future logistics API integration
+- [x] Backend tests: cover unit conversion, batch merge in bulk inbound, and channel mapping lookup + reservation in bulk orders import
+- [x] Frontend: add “批量入库导入” 页面（/inbound-import），支持映射调整与预览
+- [x] Frontend: add “批量订单导入” 页面（/orders-import），支持菜鸟/顺丰模板通过映射适配（后续可加 preset）
+- [x] Docs: update README with new endpoints + expected template columns; update devlog
+- [x] Verify: backend pytest + frontend build; then commit in two batches (backend then frontend) and deploy to Fly
 
 ---
 
@@ -73,4 +73,8 @@
 ## Scope
 - [x] Add `tasks/webtest-bugs.md` as the single source of truth for webtest bug progress in this repo
 - [x] Re-scan webtest bug list and sync remaining open items into tracker
-- [ ] Get confirmation and implement remaining BUG-03/04/05 + OBS-01/02 fixes in roseate-wms
+- [x] Implement BUG-01..BUG-05 + OBS-01..OBS-02 fixes in roseate-wms (see `tasks/webtest-bugs.md`)
+
+## Review / Summary
+- [x] Bulk inbound/orders import exists end-to-end (preview -> mapping -> commit), preserves unmapped columns to `extra_data`, and has pytest coverage
+- [x] Webtest bug list is fully implemented in this repo; remaining work is to re-run playwright E2E and triage any new findings

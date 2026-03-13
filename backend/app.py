@@ -38,6 +38,34 @@ from backend.services.product_import_service import import_products_from_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
+DEFAULT_INSTANCE_DIR = PROJECT_ROOT / "instance"
+
+
+def resolve_database_url() -> str:
+    """
+    Resolve the database URL for local/dev usage.
+
+    Fly (and any real deployment) should always provide DATABASE_URL explicitly.
+    For local/dev we try to be compatible with the E2E webtest seed script, which
+    writes to `instance/roseate_wms.db` by default.
+    """
+
+    configured = os.getenv("DATABASE_URL")
+    if configured:
+        return configured
+
+    candidates = [
+        DEFAULT_INSTANCE_DIR / "wms.db",
+        DEFAULT_INSTANCE_DIR / "roseate_wms.db",
+        PROJECT_ROOT / "roseate_wms.db",
+    ]
+    for path in candidates:
+        if path.exists():
+            return f"sqlite:///{path.resolve()}"
+
+    # Default new local DB location (align with Fly mount path semantics).
+    DEFAULT_INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{(DEFAULT_INSTANCE_DIR / 'wms.db').resolve()}"
 
 
 def api_response(code=200, data=None, msg="success"):
@@ -705,7 +733,7 @@ def create_app(config=None):
     app.config.update(
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "roseate-wms-dev-secret"),
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=8),
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///roseate_wms.db"),
+        SQLALCHEMY_DATABASE_URI=resolve_database_url(),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         DEFAULT_ADMIN_USERNAME=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"),
         DEFAULT_ADMIN_PASSWORD=os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123456"),

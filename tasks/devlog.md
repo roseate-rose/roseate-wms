@@ -159,3 +159,8 @@
 - Why: WebTest reported barcode collision risks (ambiguous inbound matching), RBAC inconsistency where staff could create products, and a debug endpoint leaking user identity.
 - How: Enforced barcode uniqueness at the API layer (`POST /api/v1/products` rejects duplicates) and made inbound reject ambiguous barcode matches. Updated product import to reject barcode collisions both within the file and against existing data. Switched `POST /api/v1/products` to `@admin_required`. Gated `/api/v1/inventory/test` behind debug/testing and removed username/role from its response. Updated frontend to hide product create UI for non-admin and show a hint on inbound when staff cannot build archives. Added pytest coverage.
 - Result: `python3 -m pytest backend/tests` passes (30 tests). `npm run build` passes.
+
+## 2026-03-13 Local Default DB Resolution (WebTest Compatibility)
+- Why: `roseate-wms-webtest` seeds into `instance/roseate_wms.db`, but the backend previously defaulted to `sqlite:///roseate_wms.db` when `DATABASE_URL` was unset, causing seed data to be ignored and E2E runs to behave like an empty system.
+- How: Added `resolve_database_url()` in `backend/app.py` so that when `DATABASE_URL` is not provided, the backend prefers an existing SQLite file under `instance/` (supporting both `instance/wms.db` and `instance/roseate_wms.db`) and otherwise initializes a new DB at `instance/wms.db`. Updated `README.md` to document the behavior and the cleanup note for both filenames.
+- Result: `python3 -m pytest backend/tests` still passes (30 tests). Local dev can run with webtest seed without needing to export `DATABASE_URL` manually.

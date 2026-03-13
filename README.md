@@ -334,7 +334,7 @@ docker run --rm -p 8000:8000 -v "$(pwd)/instance:/app/instance" roseate-wms
 - Flask 会直接从容器内的 `frontend/dist` 提供静态资源
 - Vue Router 的 History 路由会回退到 `index.html`
 - `/api/...` 仍由 Flask API 处理，未知接口保持 JSON `404`
-- SQLite 默认写入容器内 `/app/instance/roseate_wms.db`，建议挂载卷持久化
+- SQLite 建议写入容器内 `/app/instance/wms.db`，并通过挂载卷持久化（Fly 部署已默认如此）
 
 ## Fly.io 部署
 
@@ -376,11 +376,12 @@ flyctl secrets set JWT_SECRET_KEY='replace-with-a-long-random-secret' --app rose
 建议使用长度至少 32 字节的随机值。
 
 ## 注意事项
-- 当前项目仍未接入数据库迁移工具；如果你本地沿用旧版 SQLite 文件，新增字段不会自动补齐。开发中遇到旧 schema 冲突时，删除本地 `instance/roseate_wms.db` 后重新启动即可。
+- 当前项目仍未接入数据库迁移工具；如果你本地沿用旧版 SQLite 文件，新增字段不会自动补齐。开发中遇到旧 schema 冲突时，可删除本地 `instance/wms.db`（或 `instance/roseate_wms.db`）后重新启动。
+- `roseate-wms-webtest` 的 seed 默认写入 `instance/roseate_wms.db`；后端在未设置 `DATABASE_URL` 时会自动优先使用 `instance/` 下已存在的 SQLite 文件，避免 seed 后读到另一个库。
 - `inventory/import`（批次库存导入）假设商品档案已存在；该导入不会自动创建商品。商品建档可使用 `products/import`（商品档案导入）。
 
 ## 验证结果
-- `python3 -m pytest backend/tests` 通过（23 tests）
+- `python3 -m pytest backend/tests` 通过（30 tests）
 - `npm run build` 通过
 - 管理员报表导出已用 Flask test client 实测，`csv` 与 `xlsx` 都返回 `200`
 

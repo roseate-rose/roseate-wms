@@ -53,12 +53,14 @@ Implemented approach:
   - First call creates order and reserves FIFO stock.
   - Subsequent calls return the existing order and do not reserve again.
 - If `external_order_no` is omitted, the system cannot reliably dedupe repeated purchases of the same SKU, so it preserves existing non-idempotent behavior.
+Fix commit: `8a3f36a`
+Verification: pytest regression `test_order_sync_idempotency_with_external_order_no`; deployed to Fly after merge.
 
-### BUG-04 Barcode Uniqueness (Triaged)
+### BUG-04 Barcode Uniqueness (Fixed)
 Risk:
 - Duplicate barcodes make `find_product()` ambiguous and inbound matching non-deterministic.
 
-Proposed fix (safe without DB migrations):
+Fix (safe without DB migrations):
 - Enforce uniqueness at API level:
   - `POST /api/v1/products`: reject if `barcode` already exists (`409`)
   - product import overwrite: reject/skip rows that would collide barcodes across hb_code
@@ -67,24 +69,32 @@ Proposed fix (safe without DB migrations):
 
 Note:
 - DB-level `unique=True` on the model won’t retroactively apply to existing SQLite without migrations.
+Fix commit: `4dfb0ad`
+Verification: added pytest regression for duplicate barcode create and ambiguous inbound barcode; deployed to Fly after merge.
 
-### BUG-05 RBAC Consistency (Triaged)
+### BUG-05 RBAC Consistency (Fixed)
 Observation:
 - `POST /api/v1/products` currently allows `staff`, while import/mapping writes are admin-only.
 
-Proposed fix:
+Fix:
 - Change `POST /api/v1/products` decorator to `@admin_required`.
+Fix commit: `4dfb0ad`
+Verification: pytest `test_staff_cannot_create_product`; deployed to Fly after merge.
 
-### OBS-01 Debug Endpoint Leakage (Triaged)
+### OBS-01 Debug Endpoint Leakage (Fixed)
 Current:
 - `/api/v1/inventory/test` returns `username/role` for any valid JWT.
 
-Proposed fix:
+Fix:
 - Make it DEBUG-only (register route only when `app.debug` or an explicit `ENABLE_DEBUG_ENDPOINTS=1`), or sanitize response.
+Fix commit: `4dfb0ad`
+Verification: auth tests no longer depend on this endpoint; deployed to Fly after merge.
 
-### OBS-02 Staff Fulfill Permission (Pending Confirmation)
+### OBS-02 Staff Fulfill Permission (Fixed)
 Observation:
 - `orders/fulfill` permanently deducts `current_quantity`, which is irreversible.
 
 Decision:
 - We require admin for fulfill (`@admin_required`) to avoid irreversible stock deductions by staff.
+Fix commit: `8a3f36a`
+Verification: pytest `test_staff_cannot_fulfill_order`; deployed to Fly after merge.

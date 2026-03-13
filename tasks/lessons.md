@@ -2,3 +2,5 @@
 
 - Keep unit conversion as a single source of truth (`base_unit`, `purchase_unit`, `conversion_rate`); do not introduce a second representation (e.g. fractional “0.2盒” storage or extra factor columns) unless explicitly approved.
 - `extra_data` is extensible but should be operator-visible; default UI should render it collapsed/folded with an explicit expand action.
+- Irreversible inventory actions (e.g. fulfill that permanently deducts stock) should default to `admin_required` unless the business explicitly wants staff权限.
+- In this sandbox, some Python operations may fail when writing `.pyc` into system cache paths; prefer `PYTHONDONTWRITEBYTECODE=1` when running scripts outside the repo or when debugging unexpected PermissionError.
