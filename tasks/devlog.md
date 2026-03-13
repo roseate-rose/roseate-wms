@@ -164,3 +164,8 @@
 - Why: `roseate-wms-webtest` seeds into `instance/roseate_wms.db`, but the backend previously defaulted to `sqlite:///roseate_wms.db` when `DATABASE_URL` was unset, causing seed data to be ignored and E2E runs to behave like an empty system.
 - How: Added `resolve_database_url()` in `backend/app.py` so that when `DATABASE_URL` is not provided, the backend prefers an existing SQLite file under `instance/` (supporting both `instance/wms.db` and `instance/roseate_wms.db`) and otherwise initializes a new DB at `instance/wms.db`. Updated `README.md` to document the behavior and the cleanup note for both filenames.
 - Result: `python3 -m pytest backend/tests` still passes (30 tests). Local dev can run with webtest seed without needing to export `DATABASE_URL` manually.
+
+## 2026-03-13 Local Test Services Keep-Alive Scripts
+- Why: 本地需要一个“测试服务常驻运行”的方式，避免关掉终端后 Flask/Vite dev server 退出，影响人工测试与外部 E2E runner 调用。
+- How: Fixed the backend dev CLI flag so `--debug` is opt-in (stable default for long-running process). Added `scripts/local_test_up.sh`, `scripts/local_test_down.sh`, and `scripts/local_test_status.sh` which start backend + frontend via `nohup`, record pid files under `instance/run`, and write logs to `instance/run/*.log` (default ports `5001/5174`, `--strictPort` enabled to avoid silent port switching). Added `scripts/local_test_screen_up.sh` / `scripts/local_test_screen_down.sh` as a more robust keep-alive option via `screen`. Backend startup prefers `gunicorn` if installed, falling back to `python3 backend/app.py`.
+- Result: Local test services can be started once and left running; logs/pids are isolated under `instance/run`, can be stopped deterministically, and are easier to keep attached via `screen`.

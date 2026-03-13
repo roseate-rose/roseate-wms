@@ -308,6 +308,39 @@ cd frontend
 VITE_API_PROXY_TARGET=http://127.0.0.1:5001 npm run dev
 ```
 
+### 本地测试服务常驻启动
+
+如果你希望本地“测试服务”一直在后台运行（关掉终端也不退出），可以使用脚本（默认后端 `5001` / 前端 `5174`，避免常见端口冲突）：
+
+```bash
+./scripts/local_test_up.sh
+```
+
+如果你更希望用一个可随时 attach 的常驻会话（推荐），用 `screen`：
+
+```bash
+./scripts/local_test_screen_up.sh
+screen -r roseate-wms
+```
+
+可选环境变量：
+
+- `BACKEND_PORT`：后端端口（默认 `5001`）
+- `FRONTEND_PORT`：前端端口（默认 `5174`）
+- `RUN_DIR`：pid/log 输出目录（默认 `instance/run`）
+
+停止与查看状态：
+
+```bash
+./scripts/local_test_status.sh
+./scripts/local_test_down.sh
+```
+
+说明：
+
+- 前端以 `--strictPort` 启动，端口被占用会直接退出，避免“悄悄换端口”导致外部测试连错地址。
+- 后端优先用 `gunicorn`（如果已安装），否则 fallback 到 `python3 backend/app.py`。
+
 ## Docker 部署
 
 项目根目录下提供了多阶段构建的 `Dockerfile`：

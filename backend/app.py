@@ -1660,7 +1660,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="roseate-wms backend dev server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
-    parser.add_argument("--debug", action="store_true", default=True)
+    # Default to non-debug mode so the process is stable for long-running local test services.
+    # Pass --debug when you want the reloader/debugger.
+    parser.add_argument("--debug", action="store_true", default=False)
     args = parser.parse_args()
 
     app.run(host=args.host, port=args.port, debug=args.debug)
