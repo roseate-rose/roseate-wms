@@ -134,3 +134,8 @@
 - Why: 运营需要用表格批量入库与批量处理订单，并兼容菜鸟/顺丰等多种模板头；同时要保留未用字段，方便未来对接物流商 API 而不改表结构。
 - How: Added `backend/services/tabular_service.py` to read CSV/XLSX and support column guessing and extra-field preservation. Implemented inbound bulk import endpoints `POST /api/v1/inventory/inbound-import/preview` and `POST /api/v1/inventory/inbound-import` that reuse the single-inbound logic to generate `InboundReceipt/InboundLine/InventoryTransaction(IN)` and support per-row or shared receipt numbers. Implemented orders bulk import endpoints `POST /api/v1/orders/import/preview` and `POST /api/v1/orders/import` that resolve `ChannelMapping`, reserve FIFO stock, and store unmapped columns in `extra_data.row_extra` for future logistics integration. Added frontend pages `InboundImportView.vue` and `OrdersImportView.vue`, wired routes and links under “其他”, and updated README. Added pytest coverage for inbound conversion+merge and orders import reservation+extra_data.
 - Result: `python3 -m pytest backend/tests` passes (23 tests). `npm run build` passes.
+
+## 2026-03-13 Local Dev Port Overrides
+- Why: 本机常见会有其他项目占用 `5000`（后端）或需要并行跑 WebTest；需要能快速切换后端端口并让 Vite 代理跟随。
+- How: Updated `backend/app.py` to accept `--host/--port` for local dev server startup, and updated `frontend/vite.config.js` to allow overriding the backend proxy target via `VITE_API_PROXY_TARGET`. Documented the workflow in `README.md`.
+- Result: Backend can run on `http://127.0.0.1:5001` and frontend dev server can proxy `/api` to that port; both backend tests and frontend build remain passing.

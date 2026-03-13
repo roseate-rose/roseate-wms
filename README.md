@@ -273,6 +273,12 @@ python3 backend/app.py
 
 默认服务地址：`http://127.0.0.1:5000`
 
+如果本机 `5000` 端口被占用，可指定端口：
+
+```bash
+python3 backend/app.py --port 5001
+```
+
 默认管理员账号：
 - 用户名：`admin`
 - 密码：`Admin@123456`
@@ -292,6 +298,13 @@ npm run dev
 默认前端地址：`http://127.0.0.1:5173`
 
 开发环境下，Vite 会将 `/api` 代理到 `http://127.0.0.1:5000`。
+
+如果后端端口不是 `5000`，可在启动前端时覆盖代理目标，例如后端在 `5001`：
+
+```bash
+cd frontend
+VITE_API_PROXY_TARGET=http://127.0.0.1:5001 npm run dev
+```
 
 ## Docker 部署
 
