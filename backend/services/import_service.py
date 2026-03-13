@@ -10,7 +10,8 @@ DEFAULT_EXPIRY_DATE = date(2099, 12, 31)
 
 def classify_expiry_status(expiry_date, today=None):
     today = today or date.today()
-    if expiry_date < today:
+    # Business rule: expiry_date == today is treated as expired.
+    if expiry_date <= today:
         return "expired"
     if expiry_date <= date.fromordinal(today.toordinal() + 30):
         return "warning"
@@ -138,9 +139,17 @@ def import_from_csv(file_stream, merge_mode="accumulate", commit=True):
                     batch.reserved_quantity = min(batch.reserved_quantity, batch.current_quantity)
                     action = "overwritten"
                 else:
+                    old_qty = batch.current_quantity
+                    total_qty = old_qty + row["normalized_quantity"]
+                    if total_qty > 0:
+                        batch.cost = round(
+                            (old_qty * batch.cost + row["normalized_quantity"] * row["cost"]) / total_qty,
+                            6,
+                        )
+                    else:
+                        batch.cost = row["cost"]
                     batch.current_quantity += row["normalized_quantity"]
                     batch.initial_quantity += row["normalized_quantity"]
-                    batch.cost = row["cost"]
                     if not batch.production_date and row["production_date"]:
                         batch.production_date = row["production_date"]
                     action = "merged"

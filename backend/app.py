@@ -290,9 +290,16 @@ def apply_inbound_payload(payload, *, receipt=None):
     action = "created"
 
     if batch:
+        old_qty = batch.current_quantity
+        total_qty = old_qty + normalized_quantity
+        # Weighted average cost to avoid overwriting historical cost during merges.
+        if total_qty > 0:
+            batch.cost = round((old_qty * batch.cost + normalized_quantity * cost) / total_qty, 6)
+        else:
+            batch.cost = cost
+
         batch.current_quantity += normalized_quantity
         batch.initial_quantity += normalized_quantity
-        batch.cost = cost
         if not batch.production_date and production_date:
             batch.production_date = production_date
         merge_batch_extra_data(batch, batch_extra_data, batch_no)

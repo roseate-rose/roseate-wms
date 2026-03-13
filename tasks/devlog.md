@@ -139,3 +139,8 @@
 - Why: 本机常见会有其他项目占用 `5000`（后端）或需要并行跑 WebTest；需要能快速切换后端端口并让 Vite 代理跟随。
 - How: Updated `backend/app.py` to accept `--host/--port` for local dev server startup, and updated `frontend/vite.config.js` to allow overriding the backend proxy target via `VITE_API_PROXY_TARGET`. Documented the workflow in `README.md`.
 - Result: Backend can run on `http://127.0.0.1:5001` and frontend dev server can proxy `/api` to that port; both backend tests and frontend build remain passing.
+
+## 2026-03-13 Regression Fixes: Weighted Cost on Merge + Expiry Boundary
+- Why: WebTest discovered two edge regressions: merging the same expiry batch overwrote `cost` instead of computing a weighted average, and batches expiring today were classified as `warning` instead of `expired`.
+- How: Updated `apply_inbound_payload()` in `backend/app.py` and the `accumulate` branch in `backend/services/import_service.py` to compute weighted average cost on merges. Updated `classify_expiry_status()` in `backend/services/import_service.py` to treat `expiry_date == today` as `expired`. Added pytest regression coverage in `backend/tests/test_inventory.py`.
+- Result: `python3 -m pytest backend/tests` passes (25 tests). `npm run build` passes.

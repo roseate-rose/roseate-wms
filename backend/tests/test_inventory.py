@@ -133,6 +133,56 @@ def test_batch_merge(client, auth_headers, app):
         assert batches[0].current_quantity == 16
 
 
+def test_inbound_merge_cost_weighted_average(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HB2050",
+            "barcode": "6900000020500",
+            "name": "加权成本测试商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB2050",
+            "batch_no": "COST-1",
+            "expiry_date": "2027-01-01",
+            "quantity": 200,
+            "cost": 25.0,
+        },
+        headers=auth_headers,
+    )
+
+    response = client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB2050",
+            "batch_no": "COST-2",
+            "expiry_date": "2027-01-01",
+            "quantity": 10,
+            "cost": 99.0,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        batch = Batch.query.filter_by(
+            hb_code="HB2050",
+            expiry_date=date.fromisoformat("2027-01-01"),
+        ).first()
+        assert batch is not None
+        assert round(batch.cost, 2) == 28.52
+
+
 def test_unit_conversion(client, auth_headers, app):
     client.post(
         "/api/v1/products",
@@ -341,6 +391,54 @@ def test_expiry_status_calculation(client, auth_headers):
     assert report_response.status_code == 200
     warning_rows = report_response.get_json()["data"]["items"]
     assert any(row["hb_code"] == "HB8001" and row["status"] == "warning" for row in warning_rows)
+
+
+def test_expiry_today_is_expired(client, auth_headers):
+    today = date.today().isoformat()
+
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HB8002",
+            "barcode": "6900000000009",
+            "name": "到期日边界测试",
+            "spec": "50g",
+            "unit": "瓶",
+            "base_unit": "瓶",
+            "purchase_unit": "盒",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB8002",
+            "batch_no": "EXP-TODAY",
+            "expiry_date": today,
+            "quantity": 1,
+            "cost": 1.0,
+            "unit_type": "base",
+        },
+        headers=auth_headers,
+    )
+
+    expired_resp = client.get(
+        "/api/v1/inventory/expiry-report?status=expired",
+        headers=auth_headers,
+    )
+    warning_resp = client.get(
+        "/api/v1/inventory/expiry-report?status=warning",
+        headers=auth_headers,
+    )
+    assert expired_resp.status_code == 200
+    assert warning_resp.status_code == 200
+
+    expired_rows = expired_resp.get_json()["data"]["items"]
+    warning_rows = warning_resp.get_json()["data"]["items"]
+
+    assert any(row["hb_code"] == "HB8002" and row["status"] == "expired" for row in expired_rows)
+    assert not any(row["hb_code"] == "HB8002" for row in warning_rows)
 
 
 def test_import_conversion(client, auth_headers, app):
