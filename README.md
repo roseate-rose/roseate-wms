@@ -275,6 +275,12 @@ python3 backend/app.py
 
 默认服务地址：`http://127.0.0.1:5000`
 
+默认以稳定模式启动（不启用 Flask reloader）。如需调试与自动重载：
+
+```bash
+python3 backend/app.py --debug
+```
+
 如果本机 `5000` 端口被占用，可指定端口：
 
 ```bash
