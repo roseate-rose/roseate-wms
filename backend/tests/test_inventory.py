@@ -987,3 +987,134 @@ def test_orders_import_reserve_and_extra_data(client, auth_headers, app):
         batch = Batch.query.filter_by(hb_code="HBOM001").first()
         assert batch is not None
         assert batch.reserved_quantity == 3
+
+
+def test_order_sync_idempotency_with_external_order_no(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBID001",
+            "barcode": "6903333333333",
+            "name": "幂等订单测试商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-IDEM-SKU-001",
+            "hb_code": "HBID001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBID001",
+            "batch_no": "BATCH-IDEM",
+            "expiry_date": "2027-01-01",
+            "quantity": 10,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+
+    first = client.post(
+        "/api/v1/orders/sync",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-IDEM-SKU-001",
+            "external_order_no": "DY-ORDER-0001",
+            "quantity": 2,
+        },
+        headers=auth_headers,
+    )
+    assert first.status_code == 200
+    first_payload = first.get_json()["data"]
+    assert first_payload["idempotent_replay"] is False
+    first_order_id = first_payload["order"]["id"]
+
+    second = client.post(
+        "/api/v1/orders/sync",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-IDEM-SKU-001",
+            "external_order_no": "DY-ORDER-0001",
+            "quantity": 2,
+        },
+        headers=auth_headers,
+    )
+    assert second.status_code == 200
+    second_payload = second.get_json()["data"]
+    assert second_payload["idempotent_replay"] is True
+    assert second_payload["order"]["id"] == first_order_id
+
+    with app.app_context():
+        assert (
+            SalesOrder.query.filter_by(channel_name="抖音", external_sku_id="DY-IDEM-SKU-001").count() == 1
+        )
+        batch = Batch.query.filter_by(hb_code="HBID001").first()
+        assert batch is not None
+        assert batch.reserved_quantity == 2
+
+
+def test_staff_cannot_fulfill_order(client, auth_headers, staff_auth_headers):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBFUL001",
+            "barcode": "6904444444444",
+            "name": "发货权限测试商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-FUL-SKU-001",
+            "hb_code": "HBFUL001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBFUL001",
+            "batch_no": "BATCH-FUL",
+            "expiry_date": "2027-01-01",
+            "quantity": 10,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+
+    sync = client.post(
+        "/api/v1/orders/sync",
+        json={
+            "channel_name": "抖音",
+            "external_sku_id": "DY-FUL-SKU-001",
+            "external_order_no": "DY-ORDER-FUL-0001",
+            "quantity": 1,
+        },
+        headers=auth_headers,
+    )
+    order_id = sync.get_json()["data"]["order"]["id"]
+
+    forbidden = client.post(
+        "/api/v1/orders/fulfill",
+        json={"order_id": order_id},
+        headers=staff_auth_headers,
+    )
+    assert forbidden.status_code == 403

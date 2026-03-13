@@ -22,6 +22,7 @@ from backend.extensions import db, jwt
 from backend.models import (
     Batch,
     ChannelMapping,
+    ExternalOrderRef,
     InboundLine,
     InboundReceipt,
     InventoryTransaction,
@@ -191,21 +192,46 @@ def serialize_order(order):
     return order.to_dict(include_allocations=True)
 
 
-def create_sales_order(channel_name, external_sku_id, quantity, *, extra_data=None, commit=True):
+def create_sales_order(
+    channel_name,
+    external_sku_id,
+    quantity,
+    *,
+    extra_data=None,
+    external_order_no=None,
+    commit=True,
+):
+    if not external_order_no and isinstance(extra_data, dict):
+        external_order_no = (extra_data.get("external_order_no") or "").strip() or None
+
+    # Idempotency: if an external order number is provided, do not reserve again.
+    if external_order_no:
+        ref = ExternalOrderRef.query.filter_by(
+            channel_name=channel_name,
+            external_order_no=external_order_no,
+        ).first()
+        if ref and ref.order:
+            existing = ref.order
+            if existing.external_sku_id != external_sku_id or existing.quantity != quantity:
+                return None, None, "external_order_no already exists with different payload", True
+
+            # Return existing allocations; no stock changes.
+            return existing, list(existing.allocations), None, True
+
     mapping = ChannelMapping.query.filter_by(
         channel_name=channel_name,
         external_sku_id=external_sku_id,
     ).first()
     if not mapping:
-        return None, None, "channel mapping not found"
+        return None, None, "channel mapping not found", False
 
     product = Product.query.filter_by(hb_code=mapping.hb_code).first()
     if not product:
-        return None, None, "product not found"
+        return None, None, "product not found", False
 
     allocations, reserve_error = reserve_product_inventory(product, quantity)
     if reserve_error:
-        return None, None, reserve_error
+        return None, None, reserve_error, False
 
     order = SalesOrder(
         channel_name=channel_name,
@@ -217,9 +243,21 @@ def create_sales_order(channel_name, external_sku_id, quantity, *, extra_data=No
     merged_extra = {"source": "external_sync"}
     if isinstance(extra_data, dict) and extra_data:
         merged_extra.update(extra_data)
+    if external_order_no:
+        merged_extra.setdefault("external_order_no", external_order_no)
     order.set_extra_data(merged_extra)
     db.session.add(order)
     db.session.flush()
+
+    if external_order_no:
+        ref = ExternalOrderRef(
+            channel_name=channel_name,
+            external_order_no=external_order_no,
+            external_sku_id=external_sku_id,
+            order_id=order.id,
+        )
+        ref.set_extra_data({"source": "idempotency"})
+        db.session.add(ref)
 
     persisted_allocations = []
     for allocation in allocations:
@@ -236,7 +274,7 @@ def create_sales_order(channel_name, external_sku_id, quantity, *, extra_data=No
         db.session.commit()
         db.session.refresh(order)
 
-    return order, persisted_allocations, None
+    return order, persisted_allocations, None, False
 
 
 def apply_inbound_payload(payload, *, receipt=None):
@@ -1221,6 +1259,7 @@ def register_routes(app):
         payload = request.get_json(silent=True) or {}
         channel_name = (payload.get("channel_name") or "").strip()
         external_sku_id = (payload.get("external_sku_id") or "").strip()
+        external_order_no = (payload.get("external_order_no") or "").strip() or None
         quantity, quantity_error = parse_positive_int(payload.get("quantity", 1), "quantity")
 
         if not channel_name or not external_sku_id:
@@ -1229,11 +1268,12 @@ def register_routes(app):
             return api_response(code=400, msg=quantity_error)
 
         extra_data = payload.get("extra_data") or {}
-        order, allocations, error_message = create_sales_order(
+        order, allocations, error_message, is_replay = create_sales_order(
             channel_name,
             external_sku_id,
             quantity,
             extra_data=extra_data,
+            external_order_no=external_order_no,
             commit=True,
         )
         if error_message:
@@ -1243,6 +1283,7 @@ def register_routes(app):
             data={
                 "order": serialize_order(order),
                 "allocations": [allocation.to_dict() for allocation in allocations],
+                "idempotent_replay": is_replay,
             }
         )
 
@@ -1323,6 +1364,7 @@ def register_routes(app):
             return api_response(code=400, msg=str(exc))
 
         created = 0
+        replayed = 0
         imported = []
         errors = list(parsed.get("errors") or [])
 
@@ -1332,11 +1374,16 @@ def register_routes(app):
 
             nested = db.session.begin_nested()
             try:
-                order, allocations, error_message = create_sales_order(
+                external_order_no = None
+                if isinstance(payload.get("extra_data"), dict):
+                    external_order_no = (payload["extra_data"].get("external_order_no") or "").strip() or None
+
+                order, allocations, error_message, is_replay = create_sales_order(
                     payload["channel_name"],
                     payload["external_sku_id"],
                     payload["quantity"],
                     extra_data=payload.get("extra_data") or {},
+                    external_order_no=external_order_no,
                     commit=False,
                 )
                 if error_message:
@@ -1345,7 +1392,10 @@ def register_routes(app):
                     continue
 
                 nested.commit()
-                created += 1
+                if is_replay:
+                    replayed += 1
+                else:
+                    created += 1
                 imported.append({"order": serialize_order(order), "allocations": [a.to_dict() for a in allocations]})
             except Exception as exc:  # noqa: BLE001 - isolate per-row failures
                 nested.rollback()
@@ -1359,6 +1409,7 @@ def register_routes(app):
                 "valid_rows": parsed["valid_rows"],
                 "error_rows": len(errors),
                 "created": created,
+                "replayed": replayed,
                 "preview_rows": parsed["preview_rows"],
                 "imported_rows": imported[:20],
                 "errors": errors[:20],
@@ -1367,7 +1418,7 @@ def register_routes(app):
         )
 
     @app.post("/api/v1/orders/fulfill")
-    @jwt_required()
+    @admin_required
     def fulfill_order():
         payload = request.get_json(silent=True) or {}
         order_id, order_id_error = parse_positive_int(payload.get("order_id"), "order_id")

@@ -19,11 +19,11 @@ Legend:
 |---|---|---|---|---|
 | BUG-01 | High | Open | fixed | Weighted average cost on batch merge. Commit `28e49eb`. |
 | BUG-02 | Medium | Open | fixed | `expiry_date == today` treated as `expired`. Commit `28e49eb`. |
-| BUG-03 | High | Open | needs-confirmation | Order idempotency key: webtest suggests `channel+sku`, but real orders need `external_order_no` (order id) to avoid blocking legit repeated purchases of same SKU. |
+| BUG-03 | High | Open | fixed | Idempotency via `external_order_no` using `external_order_refs` table. If caller omits `external_order_no`, behavior remains non-idempotent. Commit TBD. |
 | BUG-04 | High | Open | triaged | Barcode uniqueness enforcement: at minimum API-level guard (`409` on duplicate) and disallow ambiguous barcode lookup. DB unique constraint needs migration strategy. |
 | BUG-05 | Medium | Open | triaged | RBAC consistency: align `POST /products` with other admin-only write ops. |
 | OBS-01 | Medium | Open | triaged | `/inventory/test` leaks `username/role`; likely make it DEBUG-only or sanitize response. |
-| OBS-02 | Medium | Open | needs-confirmation | Whether `staff` should be allowed to `orders/fulfill` (irreversible stock deduction). |
+| OBS-02 | Medium | Open | fixed | `POST /api/v1/orders/fulfill` is now admin-only (`@admin_required`). Commit TBD. |
 
 ## Details
 
@@ -46,13 +46,13 @@ Legend:
 Problem:
 - Repeated webhook retries may create duplicated orders and over-reserve inventory.
 
-Open decision:
-- Idempotency key:
-  - Webtest suggestion: `channel_name + external_sku_id` (simple, but may block a legit second order of the same SKU)
-  - Recommended for real-world: `channel_name + external_order_no (+ external_sku_id)` (requires API payload support)
-
-Next step:
-- Confirm desired idempotency behavior and whether `external_order_no` should be added/required for `/orders/sync` and `/orders/import`.
+Implemented approach:
+- We treat `(channel_name, external_order_no)` as the idempotency key.
+- Storage uses `external_order_refs` table with a uniqueness constraint (no migrations required for `sales_orders`).
+- `/api/v1/orders/sync` accepts optional `external_order_no`. When provided:
+  - First call creates order and reserves FIFO stock.
+  - Subsequent calls return the existing order and do not reserve again.
+- If `external_order_no` is omitted, the system cannot reliably dedupe repeated purchases of the same SKU, so it preserves existing non-idempotent behavior.
 
 ### BUG-04 Barcode Uniqueness (Triaged)
 Risk:
@@ -86,7 +86,5 @@ Proposed fix:
 Observation:
 - `orders/fulfill` permanently deducts `current_quantity`, which is irreversible.
 
-Open decision:
-- If warehouse staff must fulfill, keep as-is.
-- If only admin can fulfill, switch to `@admin_required`.
-
+Decision:
+- We require admin for fulfill (`@admin_required`) to avoid irreversible stock deductions by staff.

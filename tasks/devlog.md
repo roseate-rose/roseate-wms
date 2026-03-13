@@ -149,3 +149,8 @@
 - Why: We need a single place in this repo to track bugfix progress driven by `roseate-wms-webtest`, while keeping the webtest repo read-only.
 - How: Added `tasks/webtest-bugs.md` to record bug IDs, severity, status, fix commit hashes, and pending confirmation items (idempotency/RBAC decisions).
 - Result: Tracker is in place; future webtest findings can be triaged and progressed without editing the webtest repo.
+
+## 2026-03-13 Order Idempotency + Fulfill RBAC
+- Why: WebTest flagged duplicate order reservations under webhook retries and noted that `staff` could fulfill orders (irreversible stock deduction).
+- How: Added `ExternalOrderRef` table to implement idempotency via `(channel_name, external_order_no)` without requiring a migration on `sales_orders`. Updated `/api/v1/orders/sync` to accept optional `external_order_no` and return `idempotent_replay` when a retry is detected. Restricted `/api/v1/orders/fulfill` to admins via `@admin_required`. Added pytest coverage for idempotent sync and staff fulfill restriction.
+- Result: `python3 -m pytest backend/tests` passes (27 tests). Frontend build unaffected.

@@ -209,6 +209,7 @@ roseate-wms/
   - 返回订单列表，支持按 `status` 过滤
 - `POST /api/v1/orders/sync`
   - 接收 `channel_name`, `external_sku_id`, `quantity`
+  - 可选：`external_order_no`（外部订单号，用于幂等；建议真实 webhook 一律传入）
   - 通过 `ChannelMapping` 查找商品并按 FIFO 生成预占
 - `POST /api/v1/orders/import/preview`
   - `multipart/form-data`
@@ -221,6 +222,7 @@ roseate-wms/
 - `POST /api/v1/orders/fulfill`
   - 接收 `order_id`
   - 将预占记录核销为真实出库，并减少 `current_quantity` 与 `reserved_quantity`
+  - 仅 `admin` 可调用
 
 ### Reports
 - `GET /api/v1/reports/export`

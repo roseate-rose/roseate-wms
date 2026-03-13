@@ -322,6 +322,43 @@ class SalesOrder(TimestampMixin, ExtraDataMixin, db.Model):
         return payload
 
 
+class ExternalOrderRef(TimestampMixin, ExtraDataMixin, db.Model):
+    """
+    Idempotency mapping for external orders.
+
+    We keep this as a separate table to avoid schema migrations on the `sales_orders`
+    table while still enabling fast lookups and uniqueness constraints in SQLite.
+    """
+
+    __tablename__ = "external_order_refs"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "channel_name",
+            "external_order_no",
+            name="uq_external_order_ref_channel_order_no",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    channel_name = db.Column(db.String(50), nullable=False, index=True)
+    external_order_no = db.Column(db.String(120), nullable=False, index=True)
+    external_sku_id = db.Column(db.String(100), nullable=True, index=True)
+    order_id = db.Column(db.Integer, db.ForeignKey("sales_orders.id"), nullable=False, index=True)
+
+    order = db.relationship("SalesOrder", lazy="selectin")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "channel_name": self.channel_name,
+            "external_order_no": self.external_order_no,
+            "external_sku_id": self.external_sku_id,
+            "order_id": self.order_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "extra_data": self.get_extra_data(),
+        }
+
+
 class OrderAllocation(TimestampMixin, ExtraDataMixin, db.Model):
     __tablename__ = "order_allocations"
 
