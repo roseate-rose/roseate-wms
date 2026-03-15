@@ -174,3 +174,8 @@
 - Why: 入库是高频操作，需要在主菜单（桌面侧边栏与移动端底部 tab）直接可达，不应该藏在“其他”里。
 - How: Updated `frontend/src/layouts/MainLayout.vue` nav ordering to include `/inbound` as a first-class item (Home -> Inbound -> Products -> Orders -> Stock -> Other -> Settings). Mobile tab bar now supports 6 items by switching grid columns to `grid-cols-6` automatically when inbound is present.
 - Result: `npm run build` passes; inbound is accessible from main navigation on both desktop and mobile.
+
+## 2026-03-15 Local Test Port Contract (Stable Ports + Kill Conflicts)
+- Why: 本地运行涉及 `roseate-wms` 与 `roseate-wms-webtest` 两个项目，端口信息必须稳定且准确；自动换端口会导致 webtest/人工测试连错服务。
+- How: Documented the fixed local ports (`backend=5001`, `frontend=5174`) in `README.md`. Updated `scripts/local_test_up.sh` to refuse port switching and instruct users to kill conflicting listeners instead. Added `scripts/local_test_kill_conflicts.sh` which detects current listeners and only kills them when `CONFIRM=1` is set.
+- Result: Local test services have a stable port contract; conflicts are handled deterministically without “悄悄换端口”。

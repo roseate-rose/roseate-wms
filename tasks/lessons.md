@@ -4,3 +4,4 @@
 - `extra_data` is extensible but should be operator-visible; default UI should render it collapsed/folded with an explicit expand action.
 - Irreversible inventory actions (e.g. fulfill that permanently deducts stock) should default to `admin_required` unless the business explicitly wants staff权限.
 - In this sandbox, some Python operations may fail when writing `.pyc` into system cache paths; prefer `PYTHONDONTWRITEBYTECODE=1` when running scripts outside the repo or when debugging unexpected PermissionError.
+- Cross-repo E2E tooling depends on stable local ports. Do not silently switch ports; keep backend/frontend ports fixed and kill conflicting listeners explicitly when needed.

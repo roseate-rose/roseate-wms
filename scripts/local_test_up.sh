@@ -67,8 +67,10 @@ if is_pid_running "${BACKEND_PID_FILE}"; then
   echo "Backend already running (pid $(cat "${BACKEND_PID_FILE}"))."
 else
   if is_listening "${BACKEND_HOST}" "${BACKEND_PORT}"; then
-    echo "Backend port ${BACKEND_PORT} is already in use. Pick another port, e.g.:"
-    echo "  BACKEND_PORT=5009 ./scripts/local_test_up.sh"
+    echo "Backend port ${BACKEND_PORT} is already in use."
+    echo "We keep ports stable for cross-repo tooling (e.g. webtest)."
+    echo "If the conflict is from another project, kill it first:"
+    echo "  CONFIRM=1 ./scripts/local_test_kill_conflicts.sh"
     exit 1
   fi
 
@@ -99,8 +101,10 @@ if is_pid_running "${FRONTEND_PID_FILE}"; then
   echo "Frontend already running (pid $(cat "${FRONTEND_PID_FILE}"))."
 else
   if is_listening "${FRONTEND_HOST}" "${FRONTEND_PORT}"; then
-    echo "Frontend port ${FRONTEND_PORT} is already in use. Pick another port, e.g.:"
-    echo "  FRONTEND_PORT=5188 ./scripts/local_test_up.sh"
+    echo "Frontend port ${FRONTEND_PORT} is already in use."
+    echo "We keep ports stable for cross-repo tooling (e.g. webtest)."
+    echo "If the conflict is from another project, kill it first:"
+    echo "  CONFIRM=1 ./scripts/local_test_kill_conflicts.sh"
     exit 1
   fi
 

@@ -316,7 +316,11 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:5001 npm run dev
 
 ### 本地测试服务常驻启动
 
-如果你希望本地“测试服务”一直在后台运行（关掉终端也不退出），可以使用脚本（默认后端 `5001` / 前端 `5174`，避免常见端口冲突）：
+如果你希望本地“测试服务”一直在后台运行（关掉终端也不退出），可以使用脚本。
+
+端口约定（请保持不变，便于跨项目工具对接）：
+- 后端固定 `http://127.0.0.1:5001`
+- 前端固定 `http://127.0.0.1:5174`
 
 ```bash
 ./scripts/local_test_up.sh
@@ -331,8 +335,8 @@ screen -r roseate-wms
 
 可选环境变量：
 
-- `BACKEND_PORT`：后端端口（默认 `5001`）
-- `FRONTEND_PORT`：前端端口（默认 `5174`）
+- `BACKEND_PORT`：后端端口（默认 `5001`，不建议改）
+- `FRONTEND_PORT`：前端端口（默认 `5174`，不建议改）
 - `RUN_DIR`：pid/log 输出目录（默认 `instance/run`）
 
 停止与查看状态：
@@ -340,6 +344,13 @@ screen -r roseate-wms
 ```bash
 ./scripts/local_test_status.sh
 ./scripts/local_test_down.sh
+```
+
+如果端口被其他项目占用，我们不换端口，直接清理占用（需要显式确认）：
+
+```bash
+./scripts/local_test_kill_conflicts.sh
+CONFIRM=1 ./scripts/local_test_kill_conflicts.sh
 ```
 
 说明：
