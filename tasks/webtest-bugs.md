@@ -24,10 +24,10 @@ Legend:
 | BUG-05 | Medium | Open | fixed | `POST /api/v1/products` is now admin-only (`@admin_required`). Commit `4dfb0ad`. |
 | OBS-01 | Medium | Open | fixed | `/api/v1/inventory/test` is now debug-only and no longer returns username/role. Commit `4dfb0ad`. |
 | OBS-02 | Medium | Open | fixed | `POST /api/v1/orders/fulfill` is now admin-only (`@admin_required`). Commit `8a3f36a`. |
-| BUG-06 | High | Open | triaged | FIFO reservation should skip expired batches; `sellable_stock` should exclude expired. |
-| BUG-07 | High | Open | triaged | `/inventory/reserve` must not create unreleasable orphan reservations. |
-| BUG-08 | Medium | Open | triaged | `find_product()` should not fall through to barcode when hb_code was provided and not found. |
-| OBS-03 | Medium | Open | triaged | Missing `/orders/cancel` to release reserved allocations. |
+| BUG-06 | High | Open | fixed | FIFO reservation skips expired batches; `sellable_stock` excludes expired. Commit `a86db35`. |
+| BUG-07 | High | Open | fixed | `/inventory/reserve` now creates `manual` order + allocations; releasable via `/orders/cancel`. Commit `a86db35`. |
+| BUG-08 | Medium | Open | fixed | `find_product()` returns 404 if hb_code not found; no barcode fallthrough. Commit `a86db35`. |
+| OBS-03 | Medium | Open | fixed | Added `POST /api/v1/orders/cancel` to release reserved allocations. Commit `a86db35`. |
 
 ## Details
 
@@ -107,28 +107,36 @@ Verification: pytest `test_staff_cannot_fulfill_order`; deployed to Fly after me
 Problem:
 - FIFO reservation currently considers expired batches first, which can allocate expired stock to customer orders.
 
-Fix plan:
+Fix:
 - Update reservation query to filter `Batch.expiry_date > today`.
 - Update `Product.sellable_stock` to also exclude expired batches, so "可售库存" and reservation logic are consistent.
+Fix commit: `a86db35`
+Verification: pytest `test_order_reserve_skips_expired_batches`.
 
-### BUG-07 Manual Reserve Creates Orphan Holds (Triaged)
+### BUG-07 Manual Reserve Creates Orphan Holds (Fixed)
 Problem:
 - `/api/v1/inventory/reserve` modifies `Batch.reserved_quantity` but creates no order/allocation record, so the hold cannot be released.
 
-Fix plan:
+Fix:
 - Persist manual reserves as a `SalesOrder(channel_name='manual')` with `OrderAllocation` rows.
 - Add `/api/v1/orders/cancel` to release allocations and change status to `cancelled`.
+Fix commit: `a86db35`
+Verification: pytest `test_cancel_manual_reservation_releases_stock`.
 
-### BUG-08 `find_product()` Fallthrough (Triaged)
+### BUG-08 `find_product()` Fallthrough (Fixed)
 Problem:
 - If the caller provides an invalid `hb_code` plus a valid `barcode`, inbound silently matches by barcode and may stock the wrong product.
 
-Fix plan:
+Fix:
 - If `hb_code` is provided and not found, return `404` immediately and do not fall through to barcode matching.
+Fix commit: `a86db35`
+Verification: pytest `test_inbound_product_lookup_does_not_fall_through_to_barcode`.
 
-### OBS-03 Missing Order Cancel API (Triaged)
+### OBS-03 Missing Order Cancel API (Fixed)
 Problem:
 - There is no supported API to release a reserved order.
 
-Fix plan:
+Fix:
 - Add `POST /api/v1/orders/cancel` and release `reserved_quantity` for all allocations.
+Fix commit: `a86db35`
+Verification: pytest `test_cancel_manual_reservation_releases_stock`.
