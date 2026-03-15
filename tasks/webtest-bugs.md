@@ -24,6 +24,10 @@ Legend:
 | BUG-05 | Medium | Open | fixed | `POST /api/v1/products` is now admin-only (`@admin_required`). Commit `4dfb0ad`. |
 | OBS-01 | Medium | Open | fixed | `/api/v1/inventory/test` is now debug-only and no longer returns username/role. Commit `4dfb0ad`. |
 | OBS-02 | Medium | Open | fixed | `POST /api/v1/orders/fulfill` is now admin-only (`@admin_required`). Commit `8a3f36a`. |
+| BUG-06 | High | Open | triaged | FIFO reservation should skip expired batches; `sellable_stock` should exclude expired. |
+| BUG-07 | High | Open | triaged | `/inventory/reserve` must not create unreleasable orphan reservations. |
+| BUG-08 | Medium | Open | triaged | `find_product()` should not fall through to barcode when hb_code was provided and not found. |
+| OBS-03 | Medium | Open | triaged | Missing `/orders/cancel` to release reserved allocations. |
 
 ## Details
 
@@ -98,3 +102,33 @@ Decision:
 - We require admin for fulfill (`@admin_required`) to avoid irreversible stock deductions by staff.
 Fix commit: `8a3f36a`
 Verification: pytest `test_staff_cannot_fulfill_order`; deployed to Fly after merge.
+
+### BUG-06 FIFO Should Skip Expired Batches (Triaged)
+Problem:
+- FIFO reservation currently considers expired batches first, which can allocate expired stock to customer orders.
+
+Fix plan:
+- Update reservation query to filter `Batch.expiry_date > today`.
+- Update `Product.sellable_stock` to also exclude expired batches, so "可售库存" and reservation logic are consistent.
+
+### BUG-07 Manual Reserve Creates Orphan Holds (Triaged)
+Problem:
+- `/api/v1/inventory/reserve` modifies `Batch.reserved_quantity` but creates no order/allocation record, so the hold cannot be released.
+
+Fix plan:
+- Persist manual reserves as a `SalesOrder(channel_name='manual')` with `OrderAllocation` rows.
+- Add `/api/v1/orders/cancel` to release allocations and change status to `cancelled`.
+
+### BUG-08 `find_product()` Fallthrough (Triaged)
+Problem:
+- If the caller provides an invalid `hb_code` plus a valid `barcode`, inbound silently matches by barcode and may stock the wrong product.
+
+Fix plan:
+- If `hb_code` is provided and not found, return `404` immediately and do not fall through to barcode matching.
+
+### OBS-03 Missing Order Cancel API (Triaged)
+Problem:
+- There is no supported API to release a reserved order.
+
+Fix plan:
+- Add `POST /api/v1/orders/cancel` and release `reserved_quantity` for all allocations.

@@ -179,3 +179,8 @@
 - Why: 本地运行涉及 `roseate-wms` 与 `roseate-wms-webtest` 两个项目，端口信息必须稳定且准确；自动换端口会导致 webtest/人工测试连错服务。
 - How: Documented the fixed local ports (`backend=5001`, `frontend=5174`) in `README.md`. Updated `scripts/local_test_up.sh` to refuse port switching and instruct users to kill conflicting listeners instead. Added `scripts/local_test_kill_conflicts.sh` which detects current listeners and only kills them when `CONFIRM=1` is set.
 - Result: Local test services have a stable port contract; conflicts are handled deterministically without “悄悄换端口”。
+
+## 2026-03-15 WebTest New Bugs: Expired FIFO, Orphan Reserve, Strict Lookup, Cancel API
+- Why: `roseate-wms-webtest/tasks/bugs.md` 提出了新的边界问题：FIFO 预占会命中过期批次（BUG-06），`/inventory/reserve` 会创建无法释放的孤儿预占（BUG-07），入库商品查找会在 hb_code 不存在时静默退化为 barcode（BUG-08），以及缺少订单取消 API（OBS-03）。
+- How: Filtered reservations to skip expired batches in `reserve_product_inventory()` and excluded expired batches from `Product.sellable_stock`. Changed `find_product()` so that an explicit `hb_code` miss returns `404` and does not fall through to barcode. Reworked `POST /api/v1/inventory/reserve` to persist a `manual` `SalesOrder` + `OrderAllocation` so holds are auditable and releasable, and added `POST /api/v1/orders/cancel` to release reserved allocations (staff can cancel only manual reserves; admin required for external orders).
+- Result: Added pytest coverage for all four items; `python3 -m pytest backend/tests` passes (33 tests). README updated with the new cancel endpoint and reserve semantics.

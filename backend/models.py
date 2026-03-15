@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -98,7 +98,12 @@ class Product(ExtraDataMixin, db.Model):
 
     @property
     def sellable_stock(self) -> int:
-        return sum(batch.available_quantity for batch in self.batches if batch.available_quantity > 0)
+        today = date.today()
+        return sum(
+            batch.available_quantity
+            for batch in self.batches
+            if batch.available_quantity > 0 and batch.expiry_date and batch.expiry_date > today
+        )
 
     def to_dict(self, include_stock=False, include_batches=False, include_mappings=False):
         payload = {

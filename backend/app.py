@@ -131,6 +131,8 @@ def find_product(payload):
         product = Product.query.filter_by(hb_code=hb_code).first()
         if product:
             return product, None, None
+        # Do not silently fall through to barcode if the caller explicitly provided hb_code.
+        return None, f"product not found: {hb_code}", 404
 
     if barcode:
         matches = Product.query.filter_by(barcode=barcode).order_by(Product.hb_code.asc()).all()
@@ -171,8 +173,10 @@ def reserve_product_inventory(product, quantity):
 
     allocations = []
     remaining = quantity
+    today = date.today()
     batches = (
         Batch.query.filter_by(hb_code=product.hb_code)
+        .filter(Batch.expiry_date > today)
         .order_by(Batch.expiry_date.asc(), Batch.id.asc())
         .all()
     )
@@ -1211,15 +1215,41 @@ def register_routes(app):
         if reserve_error:
             return api_response(code=409, msg=reserve_error)
 
+        # Persist the reserve operation as a manual order so it can be cancelled (released) later.
+        order = SalesOrder(
+            channel_name="manual",
+            external_sku_id="manual",
+            hb_code=product.hb_code,
+            quantity=quantity,
+            status="reserved",
+        )
+        merged_extra = {"source": "manual_reserve"}
+        order_extra = payload.get("extra_data") or {}
+        if isinstance(order_extra, dict) and order_extra:
+            merged_extra.update(order_extra)
+        order.set_extra_data(merged_extra)
+        db.session.add(order)
+        db.session.flush()
+
+        persisted_allocations = []
+        for allocation in allocations:
+            order_allocation = OrderAllocation(
+                order_id=order.id,
+                batch_id=allocation["batch_id"],
+                quantity=allocation["reserved_quantity"],
+            )
+            order_allocation.set_extra_data({"expiry_date": allocation["expiry_date"]})
+            db.session.add(order_allocation)
+            persisted_allocations.append(order_allocation)
+
         db.session.commit()
 
         return api_response(
             data={
                 "product": product.to_dict(include_stock=True),
+                "order": serialize_order(order),
                 "reserved_quantity": quantity,
-                "allocations": [
-                    {k: v for k, v in allocation.items() if k != "batch"} for allocation in allocations
-                ],
+                "allocations": [allocation.to_dict() for allocation in persisted_allocations],
             }
         )
 
@@ -1475,6 +1505,47 @@ def register_routes(app):
                 "transactions": [transaction.to_dict() for transaction in transactions],
             }
         )
+
+    @app.post("/api/v1/orders/cancel")
+    @jwt_required()
+    def cancel_order():
+        payload = request.get_json(silent=True) or {}
+        order_id, order_id_error = parse_positive_int(payload.get("order_id"), "order_id")
+        if order_id_error:
+            return api_response(code=400, msg=order_id_error)
+
+        order = db.session.get(SalesOrder, order_id)
+        if not order:
+            return api_response(code=404, msg="order not found")
+
+        claims = get_jwt()
+        role = claims.get("role")
+
+        # Allow staff to cancel only manual reservations; external orders require admin.
+        if role != "admin" and order.channel_name != "manual":
+            return api_response(code=403, msg="admin role required to cancel external orders")
+
+        if order.status == "cancelled":
+            return api_response(data={"order": serialize_order(order), "idempotent_replay": True})
+
+        if order.status != "reserved":
+            return api_response(code=409, msg="order is not in reserved status")
+
+        for allocation in order.allocations:
+            batch = allocation.batch
+            if not batch:
+                return api_response(code=409, msg="allocated batch not found")
+            batch.reserved_quantity = max(batch.reserved_quantity - allocation.quantity, 0)
+
+        order.status = "cancelled"
+        extra = order.get_extra_data()
+        if isinstance(extra, dict):
+            extra.setdefault("cancelled_at", datetime.utcnow().isoformat())
+            order.set_extra_data(extra)
+
+        db.session.commit()
+
+        return api_response(data={"order": serialize_order(order), "idempotent_replay": False})
 
     @app.get("/api/v1/reports/export")
     @admin_required

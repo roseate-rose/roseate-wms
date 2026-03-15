@@ -262,6 +262,8 @@ def test_reservation_logic(client, auth_headers, app):
     assert reserve_payload["data"]["product"]["total_stock"] == 12
     assert reserve_payload["data"]["product"]["reserved_stock"] == 5
     assert reserve_payload["data"]["product"]["sellable_stock"] == 7
+    assert reserve_payload["data"]["order"]["channel_name"] == "manual"
+    assert reserve_payload["data"]["order"]["status"] == "reserved"
 
     product_response = client.get("/api/v1/products?q=HB5001", headers=auth_headers)
     item = product_response.get_json()["data"]["items"][0]
@@ -273,6 +275,169 @@ def test_reservation_logic(client, auth_headers, app):
         batch = Batch.query.filter_by(hb_code="HB5001").first()
         assert batch.current_quantity == 12
         assert batch.reserved_quantity == 5
+
+
+def test_cancel_manual_reservation_releases_stock(client, auth_headers, staff_auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBCAN001",
+            "barcode": "6900000000099",
+            "name": "取消预占测试商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBCAN001",
+            "batch_no": "CAN-001",
+            "expiry_date": "2027-01-01",
+            "quantity": 10,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+
+    reserve = client.post(
+        "/api/v1/inventory/reserve",
+        json={"hb_code": "HBCAN001", "quantity": 3},
+        headers=auth_headers,
+    )
+    assert reserve.status_code == 200
+    order_id = reserve.get_json()["data"]["order"]["id"]
+
+    # Staff can cancel manual reservations.
+    cancel = client.post(
+        "/api/v1/orders/cancel",
+        json={"order_id": order_id},
+        headers=staff_auth_headers,
+    )
+    assert cancel.status_code == 200
+    cancel_payload = cancel.get_json()["data"]
+    assert cancel_payload["order"]["status"] == "cancelled"
+
+    with app.app_context():
+        product = Product.query.filter_by(hb_code="HBCAN001").first()
+        assert product is not None
+        assert product.reserved_stock == 0
+        assert product.sellable_stock == 10
+
+        batch = Batch.query.filter_by(hb_code="HBCAN001").first()
+        assert batch is not None
+        assert batch.current_quantity == 10
+        assert batch.reserved_quantity == 0
+
+
+def test_order_reserve_skips_expired_batches(client, auth_headers, app):
+    from datetime import date, timedelta
+
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBFIFO001",
+            "barcode": "6900000000100",
+            "name": "FIFO 过滤过期批次商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "箱",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "taobao",
+            "external_sku_id": "SKU-HBFIFO001",
+            "hb_code": "HBFIFO001",
+        },
+        headers=auth_headers,
+    )
+
+    today = date.today()
+    expired = (today - timedelta(days=1)).isoformat()
+    future = (today + timedelta(days=30)).isoformat()
+
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBFIFO001",
+            "batch_no": "EXPIRED-001",
+            "expiry_date": expired,
+            "quantity": 5,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBFIFO001",
+            "batch_no": "FUTURE-001",
+            "expiry_date": future,
+            "quantity": 5,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+
+    sync = client.post(
+        "/api/v1/orders/sync",
+        json={
+            "channel_name": "taobao",
+            "external_sku_id": "SKU-HBFIFO001",
+            "quantity": 1,
+        },
+        headers=auth_headers,
+    )
+    assert sync.status_code == 200
+    allocations = sync.get_json()["data"]["allocations"]
+    assert allocations[0]["expiry_date"] == future
+
+    with app.app_context():
+        expired_batch = Batch.query.filter_by(hb_code="HBFIFO001", batch_no="EXPIRED-001").first()
+        future_batch = Batch.query.filter_by(hb_code="HBFIFO001", batch_no="FUTURE-001").first()
+        assert expired_batch is not None and future_batch is not None
+        assert expired_batch.reserved_quantity == 0
+        assert future_batch.reserved_quantity == 1
+
+
+def test_inbound_product_lookup_does_not_fall_through_to_barcode(client, auth_headers):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBFIND001",
+            "barcode": "6900000000101",
+            "name": "查找商品",
+            "spec": "1pc",
+            "unit": "件",
+            "base_unit": "件",
+            "purchase_unit": "件",
+            "conversion_rate": 1,
+        },
+        headers=auth_headers,
+    )
+
+    inbound = client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HB-GHOST-9999",
+            "barcode": "6900000000101",
+            "batch_no": "BN-TEST",
+            "expiry_date": "2030-01-01",
+            "quantity": 1,
+            "cost": 1.0,
+        },
+        headers=auth_headers,
+    )
+    assert inbound.status_code == 404
 
 
 def test_channel_lookup(client, auth_headers, app):

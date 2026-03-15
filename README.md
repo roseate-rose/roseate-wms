@@ -178,6 +178,7 @@ roseate-wms/
 - `POST /api/v1/inventory/reserve`
   - 按 FIFO 顺序预占可售库存
   - 只增加 `reserved_quantity`，不减少 `current_quantity`
+  - 会创建一张 `manual` 订单记录，便于通过 `/orders/cancel` 释放预占
 - `GET /api/v1/inventory/expiry-report`
   - 返回到期日升序批次明细
   - 支持 `status=expired|warning|healthy`
@@ -223,6 +224,10 @@ roseate-wms/
   - 接收 `order_id`
   - 将预占记录核销为真实出库，并减少 `current_quantity` 与 `reserved_quantity`
   - 仅 `admin` 可调用
+- `POST /api/v1/orders/cancel`
+  - 接收 `order_id`
+  - 释放该订单 allocations 中的 `reserved_quantity` 并将订单标记为 `cancelled`
+  - `staff` 仅可取消 `manual` 预占；外部渠道订单取消需要 `admin`
 
 ### Reports
 - `GET /api/v1/reports/export`
