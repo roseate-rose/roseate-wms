@@ -31,8 +31,8 @@ describe_pid() {
 
 kill_pids() {
   local label="$1"
-  local pids=("$@")
   shift || true
+  local pids=("$@")
 
   if [[ "${#pids[@]}" -eq 0 ]]; then
     echo "${label}: no listeners"
@@ -82,10 +82,18 @@ while IFS= read -r pid; do
   [[ -n "${pid}" ]] && frontend_pids+=("${pid}")
 done < <(find_listeners "${FRONTEND_PORT}")
 
-kill_pids "Backend port ${BACKEND_PORT} listeners" "${backend_pids[@]}"
-kill_pids "Frontend port ${FRONTEND_PORT} listeners" "${frontend_pids[@]}"
+if [[ "${#backend_pids[@]}" -gt 0 ]]; then
+  kill_pids "Backend port ${BACKEND_PORT} listeners" "${backend_pids[@]}"
+else
+  kill_pids "Backend port ${BACKEND_PORT} listeners"
+fi
+
+if [[ "${#frontend_pids[@]}" -gt 0 ]]; then
+  kill_pids "Frontend port ${FRONTEND_PORT} listeners" "${frontend_pids[@]}"
+else
+  kill_pids "Frontend port ${FRONTEND_PORT} listeners"
+fi
 
 echo
 echo "Done. You can now run:"
 echo "  ./scripts/local_test_up.sh"
-
