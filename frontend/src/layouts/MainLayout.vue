@@ -8,9 +8,10 @@ const route = useRoute();
 const role = getStoredRole();
 
 // Sidebar order requirement:
-// Home (dashboard) -> Products -> Orders -> Stock -> Other -> Settings
+// Home (dashboard) -> Inbound -> Products -> Orders -> Stock -> Other -> Settings
 const navItems = [
   { name: "home", label: "首页", path: "/" },
+  { name: "inbound", label: "入库", path: "/inbound" },
   { name: "products", label: "商品", path: "/products" },
   { name: "orders", label: "订单", path: "/orders" },
   { name: "stock", label: "库存", path: "/stock" },
@@ -23,10 +24,18 @@ const visibleSidebarItems = computed(() =>
 );
 const visibleMobileItems = computed(() =>
   visibleSidebarItems.value.filter((item) =>
-    ["/", "/products", "/orders", "/stock", "/other"].includes(item.path),
+    ["/", "/inbound", "/products", "/orders", "/stock", "/other"].includes(item.path),
   ),
 );
 const activePath = computed(() => route.path);
+
+const mobileGridColsClass = computed(() => {
+  const count = visibleMobileItems.value.length
+  if (count >= 6) {
+    return "grid-cols-6"
+  }
+  return "grid-cols-5"
+})
 
 function isActive(path) {
   if (path === "/") {
@@ -92,7 +101,7 @@ const currentLabel = computed(() => {
     <nav
       class="fixed inset-x-0 bottom-0 z-20 border-t border-brand/10 bg-white/95 px-2 py-2 backdrop-blur md:hidden"
     >
-      <div class="grid grid-cols-5 gap-2">
+      <div class="grid gap-2" :class="mobileGridColsClass">
         <RouterLink
           v-for="item in visibleMobileItems"
           :key="item.name"

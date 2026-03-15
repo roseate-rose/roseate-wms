@@ -169,3 +169,8 @@
 - Why: 本地需要一个“测试服务常驻运行”的方式，避免关掉终端后 Flask/Vite dev server 退出，影响人工测试与外部 E2E runner 调用。
 - How: Fixed the backend dev CLI flag so `--debug` is opt-in (stable default for long-running process). Added `scripts/local_test_up.sh`, `scripts/local_test_down.sh`, and `scripts/local_test_status.sh` which start backend + frontend via `nohup`, record pid files under `instance/run`, and write logs to `instance/run/*.log` (default ports `5001/5174`, `--strictPort` enabled to avoid silent port switching). Added `scripts/local_test_screen_up.sh` / `scripts/local_test_screen_down.sh` as a more robust keep-alive option via `screen`. Backend startup prefers `gunicorn` if installed, falling back to `python3 backend/app.py`.
 - Result: Local test services can be started once and left running; logs/pids are isolated under `instance/run`, can be stopped deterministically, and are easier to keep attached via `screen`.
+
+## 2026-03-15 Main Menu: Add Inbound Entry
+- Why: 入库是高频操作，需要在主菜单（桌面侧边栏与移动端底部 tab）直接可达，不应该藏在“其他”里。
+- How: Updated `frontend/src/layouts/MainLayout.vue` nav ordering to include `/inbound` as a first-class item (Home -> Inbound -> Products -> Orders -> Stock -> Other -> Settings). Mobile tab bar now supports 6 items by switching grid columns to `grid-cols-6` automatically when inbound is present.
+- Result: `npm run build` passes; inbound is accessible from main navigation on both desktop and mobile.
