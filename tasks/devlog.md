@@ -184,3 +184,8 @@
 - Why: `roseate-wms-webtest/tasks/bugs.md` 提出了新的边界问题：FIFO 预占会命中过期批次（BUG-06），`/inventory/reserve` 会创建无法释放的孤儿预占（BUG-07），入库商品查找会在 hb_code 不存在时静默退化为 barcode（BUG-08），以及缺少订单取消 API（OBS-03）。
 - How: Filtered reservations to skip expired batches in `reserve_product_inventory()` and excluded expired batches from `Product.sellable_stock`. Changed `find_product()` so that an explicit `hb_code` miss returns `404` and does not fall through to barcode. Reworked `POST /api/v1/inventory/reserve` to persist a `manual` `SalesOrder` + `OrderAllocation` so holds are auditable and releasable, and added `POST /api/v1/orders/cancel` to release reserved allocations (staff can cancel only manual reserves; admin required for external orders).
 - Result: Added pytest coverage for all four items; `python3 -m pytest backend/tests` passes (33 tests). README updated with the new cancel endpoint and reserve semantics.
+
+## 2026-03-17 Local Screen Scripts Hardening
+- Why: 本地常驻服务使用 `screen`，但 macOS 下 `screen -list` 即使存在 session 也可能返回退出码 1，配合 `set -euo pipefail` 会导致 up/down 脚本异常退出，从而出现重复 session 或 restart 失败，进而引发“5001 跑旧进程”的错觉。
+- How: Fixed `scripts/local_test_screen_up.sh` and `scripts/local_test_screen_down.sh` to ignore `screen -list` non-zero exit codes and still parse output. Added a lesson note so后续脚本一律容错该行为。
+- Result: Re-running `./scripts/local_test_screen_up.sh` now correctly detects existing `roseate-wms` session and refuses to spawn duplicates; down script reliably stops all matching sessions.

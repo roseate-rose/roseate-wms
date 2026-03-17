@@ -13,7 +13,8 @@ FRONTEND_PORT="${FRONTEND_PORT:-5174}"
 
 mkdir -p "${RUN_DIR}"
 
-if screen -list | grep -q "[.]${SCREEN_NAME}[[:space:]]"; then
+# `screen -list` returns exit code 1 even when sessions exist, so we must ignore it.
+if (screen -list 2>/dev/null || true) | grep -q "[.]${SCREEN_NAME}[[:space:]]"; then
   echo "screen session '${SCREEN_NAME}' already exists."
   echo "Attach: screen -r ${SCREEN_NAME}"
   exit 0

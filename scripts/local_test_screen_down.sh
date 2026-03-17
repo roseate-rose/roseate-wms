@@ -5,7 +5,7 @@ set -euo pipefail
 SCREEN_NAME="${SCREEN_NAME:-roseate-wms}"
 
 # `screen -list` returns exit code 1 even when sessions exist, so we must ignore it.
-sessions="$((screen -list 2>/dev/null || true) | awk -v name="${SCREEN_NAME}" '$1 ~ ("\\." name "$") {print $1}')"
+sessions="$( (screen -list 2>/dev/null || true) | awk -v name="${SCREEN_NAME}" '$1 ~ ("\\." name "$") {print $1}' )"
 
 if [[ -z "${sessions}" ]]; then
   echo "screen session '${SCREEN_NAME}' not found."
