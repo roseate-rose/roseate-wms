@@ -50,6 +50,12 @@ const items = computed(() => {
       to: "/changelog",
       tag: "Info",
     },
+    {
+      title: "设置",
+      desc: "查看当前账号、退出登录；管理员可查看系统用户列表。",
+      to: "/settings",
+      tag: "Account",
+    },
   ];
 
   if (isAdmin) {

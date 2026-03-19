@@ -6,9 +6,11 @@ Roseate-WMS（蕴香和本轻量化仓库管理系统）面向美妆、医药等
 
 ### Stage 1
 - JWT 登录与受保护接口
+- JWT 访问令牌有效期为 7 天
 - Vue 3 + Vite + Tailwind 基础框架
 - 全局路由守卫与 Axios Token 注入
 - 桌面侧边栏 / 移动端底部导航响应式布局
+- 用户设置页支持主动退出登录，管理员可查看系统用户清单
 
 ### Stage 2
 - `Product` / `Batch` 批次化库存模型
@@ -144,6 +146,10 @@ roseate-wms/
 
 ### Auth
 - `POST /api/v1/auth/login`
+  - 登录成功后返回 JWT；默认有效期 `7 days`
+- `GET /api/v1/users`
+  - 返回系统用户列表
+  - 仅 `admin` 可调用
 - `GET /api/v1/inventory/test`
 
 ### Product & Inventory
@@ -260,7 +266,7 @@ roseate-wms/
 - `/finance`：财务统计入口，仅管理员可见
 - `/inbound`：H5 优先入库流程，支持采购单位和最小单位切换
 - `/inbound-import`：批量入库导入（生成入库单、入库明细与 IN 流水）
-- `/settings`：用户设置入口，仅管理员可见
+- `/settings`：用户设置入口，所有登录用户可见；支持退出登录，管理员额外可见系统用户列表
 - `/stock`：到期报表页，支持状态筛选与红/黄/绿行背景
 - `/outbound`：后续阶段入口
 
@@ -295,6 +301,13 @@ python3 backend/app.py --port 5001
 默认管理员账号：
 - 用户名：`admin`
 - 密码：`Admin@123456`
+
+默认员工账号：
+- `warehouse / Warehouse@123456`（仓库专员，`staff`）
+- `inbound / Inbound@123456`（入库专员，`staff`）
+- `orders / Orders@123456`（订单专员，`staff`）
+
+如需覆盖默认员工账号，可通过环境变量 `DEFAULT_EXTRA_USERS_JSON` 传入 JSON 数组。
 
 ### 3. 运行后端测试
 ```bash
@@ -436,8 +449,8 @@ flyctl secrets set JWT_SECRET_KEY='replace-with-a-long-random-secret' --app rose
 - `inventory/import`（批次库存导入）假设商品档案已存在；该导入不会自动创建商品。商品建档可使用 `products/import`（商品档案导入）。
 
 ## 验证结果
-- `python3 -m pytest backend/tests` 通过（30 tests）
-- `npm run build` 通过
+- `python3 -m pytest backend/tests` 通过（36 tests）
+- `npm --prefix frontend run build` 通过
 - 管理员报表导出已用 Flask test client 实测，`csv` 与 `xlsx` 都返回 `200`
 
 ## 后续方向

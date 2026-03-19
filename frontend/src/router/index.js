@@ -54,7 +54,7 @@ const routes = [
         path: "settings",
         name: "settings",
         component: () => import("../views/SettingsView.vue"),
-        meta: { adminOnly: true, title: "设置" },
+        meta: { title: "设置" },
       },
       {
         path: "channels",

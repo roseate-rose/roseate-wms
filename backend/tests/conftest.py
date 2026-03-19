@@ -23,6 +23,20 @@ def app(tmp_path):
             "DEFAULT_ADMIN_USERNAME": "admin",
             "DEFAULT_ADMIN_PASSWORD": "password123",
             "DEFAULT_ADMIN_ROLE": "admin",
+            "DEFAULT_EXTRA_USERS": [
+                {
+                    "username": "warehouse",
+                    "password": "warehouse123",
+                    "role": "staff",
+                    "extra_data": {"seeded": True, "display_name": "仓库专员"},
+                },
+                {
+                    "username": "inbound",
+                    "password": "inbound123",
+                    "role": "staff",
+                    "extra_data": {"seeded": True, "display_name": "入库专员"},
+                },
+            ],
             "FRONTEND_DIST_DIR": str(frontend_dist_dir),
         }
     )
@@ -30,10 +44,11 @@ def app(tmp_path):
     with app.app_context():
         db.drop_all()
         db.create_all()
-        from backend.app import ensure_default_admin
+        from backend.app import ensure_default_admin, ensure_default_extra_users
         from backend.models import User
 
         ensure_default_admin(app)
+        ensure_default_extra_users(app)
 
         staff_user = User(username="staff", role="staff")
         staff_user.set_password("staff123")

@@ -45,6 +45,44 @@ def test_app_bootstraps_default_admin(app):
         assert user.check_password("password123")
 
 
+def test_app_bootstraps_default_extra_users(app):
+    with app.app_context():
+        from backend.models import User
+
+        warehouse = User.query.filter_by(username="warehouse").first()
+        inbound = User.query.filter_by(username="inbound").first()
+
+        assert warehouse is not None
+        assert warehouse.role == "staff"
+        assert warehouse.check_password("warehouse123")
+        assert warehouse.get_extra_data()["display_name"] == "仓库专员"
+
+        assert inbound is not None
+        assert inbound.role == "staff"
+        assert inbound.check_password("inbound123")
+
+
+def test_list_users_requires_admin_and_returns_seeded_users(client, auth_headers, staff_auth_headers):
+    forbidden = client.get("/api/v1/users", headers=staff_auth_headers)
+    assert forbidden.status_code == 403
+
+    response = client.get("/api/v1/users", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.get_json()["data"]
+    usernames = [item["username"] for item in payload["items"]]
+
+    assert "admin" in usernames
+    assert "staff" in usernames
+    assert "warehouse" in usernames
+    assert "inbound" in usernames
+
+
+def test_default_jwt_expiry_is_seven_days(app):
+    from datetime import timedelta
+
+    assert app.config["JWT_ACCESS_TOKEN_EXPIRES"] == timedelta(days=7)
+
+
 def test_flask_serves_built_frontend_assets(client):
     index_response = client.get("/")
     spa_response = client.get("/products/HB1001")

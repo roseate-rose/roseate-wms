@@ -6,3 +6,4 @@
 - In this sandbox, some Python operations may fail when writing `.pyc` into system cache paths; prefer `PYTHONDONTWRITEBYTECODE=1` when running scripts outside the repo or when debugging unexpected PermissionError.
 - Cross-repo E2E tooling depends on stable local ports. Do not silently switch ports; keep backend/frontend ports fixed and kill conflicting listeners explicitly when needed.
 - `screen -list` on macOS may exit with code 1 even when sessions exist; scripts must tolerate this (avoid `set -euo pipefail` pipeline exits).
+- When the user changes auth policy or seeded-account expectations, update all four surfaces together: backend config, tests, operator-facing docs, and deployment state.

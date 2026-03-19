@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from functools import wraps
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import secrets
@@ -736,12 +737,13 @@ def create_app(config=None):
     app = Flask(__name__)
     app.config.update(
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "roseate-wms-dev-secret"),
-        JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=8),
+        JWT_ACCESS_TOKEN_EXPIRES=timedelta(days=7),
         SQLALCHEMY_DATABASE_URI=resolve_database_url(),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         DEFAULT_ADMIN_USERNAME=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"),
         DEFAULT_ADMIN_PASSWORD=os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123456"),
         DEFAULT_ADMIN_ROLE=os.getenv("DEFAULT_ADMIN_ROLE", "admin"),
+        DEFAULT_EXTRA_USERS=os.getenv("DEFAULT_EXTRA_USERS_JSON"),
         FRONTEND_DIST_DIR=resolve_frontend_dist_dir(config),
     )
 
@@ -757,6 +759,7 @@ def create_app(config=None):
     with app.app_context():
         db.create_all()
         ensure_default_admin(app)
+        ensure_default_extra_users(app)
 
     return app
 
@@ -777,6 +780,71 @@ def ensure_default_admin(app):
     user.set_password(password)
     user.set_extra_data({"seeded": True})
     db.session.add(user)
+    db.session.commit()
+
+
+def get_default_extra_users(app):
+    configured = app.config.get("DEFAULT_EXTRA_USERS")
+    if configured is None or configured == "":
+        return [
+            {
+                "username": "warehouse",
+                "password": "Warehouse@123456",
+                "role": "staff",
+                "extra_data": {"seeded": True, "display_name": "仓库专员"},
+            },
+            {
+                "username": "inbound",
+                "password": "Inbound@123456",
+                "role": "staff",
+                "extra_data": {"seeded": True, "display_name": "入库专员"},
+            },
+            {
+                "username": "orders",
+                "password": "Orders@123456",
+                "role": "staff",
+                "extra_data": {"seeded": True, "display_name": "订单专员"},
+            },
+        ]
+
+    if isinstance(configured, str):
+        try:
+            parsed = json.loads(configured)
+        except json.JSONDecodeError:
+            return []
+    else:
+        parsed = configured
+
+    if not isinstance(parsed, list):
+        return []
+    return parsed
+
+
+def ensure_default_extra_users(app):
+    for item in get_default_extra_users(app):
+        if not isinstance(item, dict):
+            continue
+
+        username = (item.get("username") or "").strip()
+        password = item.get("password") or ""
+        role = (item.get("role") or "staff").strip() or "staff"
+        extra_data = item.get("extra_data") or {}
+
+        if not username or not password:
+            continue
+
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            continue
+
+        user = User(username=username, role=role)
+        user.set_password(password)
+        if isinstance(extra_data, dict):
+            user.set_extra_data(extra_data)
+        else:
+            user.set_extra_data({"seeded": True})
+        db.session.add(user)
+
     db.session.commit()
 
 
@@ -821,6 +889,12 @@ def register_routes(app):
                 "user": user.to_dict(),
             }
         )
+
+    @app.get("/api/v1/users")
+    @admin_required
+    def list_users():
+        users = User.query.order_by(User.role.asc(), User.username.asc()).all()
+        return api_response(data={"items": [user.to_dict() for user in users], "total": len(users)})
 
     if app.config.get("ENABLE_DEBUG_ENDPOINTS") or app.debug or app.testing:
         @app.get("/api/v1/inventory/test")

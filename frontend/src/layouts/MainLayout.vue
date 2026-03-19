@@ -2,10 +2,7 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 
-import { getStoredRole } from "../auth/session";
-
 const route = useRoute();
-const role = getStoredRole();
 
 // Sidebar order requirement:
 // Home (dashboard) -> Inbound -> Products -> Orders -> Stock -> Other -> Settings
@@ -16,12 +13,10 @@ const navItems = [
   { name: "orders", label: "订单", path: "/orders" },
   { name: "stock", label: "库存", path: "/stock" },
   { name: "other", label: "其他", path: "/other" },
-  { name: "settings", label: "设置", path: "/settings", adminOnly: true },
+  { name: "settings", label: "设置", path: "/settings" },
 ];
 
-const visibleSidebarItems = computed(() =>
-  navItems.filter((item) => !item.adminOnly || role === "admin"),
-);
+const visibleSidebarItems = computed(() => navItems);
 const visibleMobileItems = computed(() =>
   visibleSidebarItems.value.filter((item) =>
     ["/", "/inbound", "/products", "/orders", "/stock", "/other"].includes(item.path),
