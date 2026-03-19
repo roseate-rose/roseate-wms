@@ -189,3 +189,8 @@
 - Why: 本地常驻服务使用 `screen`，但 macOS 下 `screen -list` 即使存在 session 也可能返回退出码 1，配合 `set -euo pipefail` 会导致 up/down 脚本异常退出，从而出现重复 session 或 restart 失败，进而引发“5001 跑旧进程”的错觉。
 - How: Fixed `scripts/local_test_screen_up.sh` and `scripts/local_test_screen_down.sh` to ignore `screen -list` non-zero exit codes and still parse output. Added a lesson note so后续脚本一律容错该行为。
 - Result: Re-running `./scripts/local_test_screen_up.sh` now correctly detects existing `roseate-wms` session and refuses to spawn duplicates; down script reliably stops all matching sessions.
+
+## 2026-03-19 Expired JWT UX Recovery
+- Why: 线上 token 过期后，前端没有统一处理 `401 token has expired`，导致商品、入库等所有受保护页面持续报错，但不会清理登录态或跳回登录页，用户只能困在坏状态里。
+- How: Kept the backend JWT expiry policy unchanged (`8h`) and fixed the frontend recovery path instead. Added a response interceptor in `frontend/src/api/http.js` that, for non-login `401` token failures, clears the stored token and user state and redirects to `/login` with the current route preserved in `redirect`. Added `clearStoredUser()` in `frontend/src/auth/session.js`.
+- Result: `python3 -m pytest backend/tests` passes (33 tests) and `npm --prefix frontend run build` passes. Expired sessions now fail closed and recover by forcing a fresh login instead of spamming API errors.

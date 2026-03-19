@@ -78,3 +78,19 @@
 ## Review / Summary
 - [x] Bulk inbound/orders import exists end-to-end (preview -> mapping -> commit), preserves unmapped columns to `extra_data`, and has pytest coverage
 - [x] Webtest bug list is fully implemented in this repo; remaining work is to re-run playwright E2E and triage any new findings
+
+---
+
+# Expired Token UX Todo
+
+## Scope
+- [x] Review current JWT expiry behavior and frontend auth/session handling
+- [x] Add centralized frontend handling for expired/invalid token responses
+- [x] Clear local auth state and redirect to `/login` instead of leaving the UI stuck on repeated `token has expired`
+- [x] Verify with backend pytest + frontend build
+- [ ] Deploy updated frontend to Fly
+
+## Review / Summary
+- [x] Backend JWT expiry remains 8 hours; no server-side expiry change was made
+- [x] Frontend now clears stale auth state and redirects to `/login` on non-login 401 token failures
+- [x] Verified with `python3 -m pytest backend/tests` and `npm --prefix frontend run build`

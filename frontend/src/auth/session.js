@@ -22,4 +22,8 @@ function setStoredUser(user) {
   localStorage.setItem(USER_KEY, JSON.stringify(user || null));
 }
 
-export { USER_KEY, getStoredRole, getStoredUser, setStoredUser };
+function clearStoredUser() {
+  localStorage.removeItem(USER_KEY);
+}
+
+export { USER_KEY, clearStoredUser, getStoredRole, getStoredUser, setStoredUser };
