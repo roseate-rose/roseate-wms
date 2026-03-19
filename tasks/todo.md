@@ -88,7 +88,7 @@
 - [x] Add centralized frontend handling for expired/invalid token responses
 - [x] Clear local auth state and redirect to `/login` instead of leaving the UI stuck on repeated `token has expired`
 - [x] Verify with backend pytest + frontend build
-- [ ] Deploy updated frontend to Fly
+- [x] Deploy updated frontend to Fly
 
 ## Review / Summary
 - [x] Backend JWT expiry remains 8 hours; no server-side expiry change was made
