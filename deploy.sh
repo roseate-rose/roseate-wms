@@ -31,7 +31,7 @@ else
 fi
 
 echo "Deploying ${APP_NAME}..."
-flyctl deploy --app "${APP_NAME}" --yes
+flyctl deploy --app "${APP_NAME}" --yes --remote-only --depot=false
 
 cat <<'EOF'
 

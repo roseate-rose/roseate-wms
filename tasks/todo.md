@@ -6,12 +6,12 @@
 - [x] Seed several non-admin default users and expose them to admins in settings
 - [x] Make user settings support explicit logout for all logged-in users
 - [x] Update README, devlog, lessons, and review notes to match actual behavior
-- [ ] Commit, push, and deploy the auth/session updates to Fly
+- [x] Commit, push, and deploy the auth/session updates to Fly
 
 ## Review / Summary
 - [x] Backend tests pass after auth/session changes
 - [x] Frontend build passes with settings/logout updates
-- [ ] Fly deployment completed with the new auth/session behavior
+- [x] Fly deployment completed with the new auth/session behavior
 
 # Fly Deploy Script Todo
 

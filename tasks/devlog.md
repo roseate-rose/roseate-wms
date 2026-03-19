@@ -199,3 +199,8 @@
 - Why: 当前线上频繁出现 `token has expired`，而用户也明确要求将 token 政策调整为 7 天，并补齐一组非管理员默认账号，避免所有操作共用 `admin`。同时设置页需要提供显式退出登录能力，便于用户主动清理登录态。
 - How: Updated `backend/app.py` to set `JWT_ACCESS_TOKEN_EXPIRES=timedelta(days=7)`, seed default staff users through `ensure_default_extra_users()`, and expose an admin-only `GET /api/v1/users` endpoint. Fixed the extra-user config parser so it safely accepts either a JSON string or a Python list. Extended `backend/tests/conftest.py` and `backend/tests/test_auth.py` to verify 7-day expiry, seeded staff bootstrap, and admin-only user listing. Updated `frontend/src/router/index.js`, `frontend/src/layouts/MainLayout.vue`, `frontend/src/views/OtherView.vue`, and `frontend/src/views/SettingsView.vue` so all logged-in users can enter settings and log out, while admins additionally see the seeded-user roster.
 - Result: `python3 -m pytest backend/tests` passes (36 tests) and `npm --prefix frontend run build` passes. The app now defaults to a 7-day JWT, exposes multiple seeded staff accounts, and supports logout from the settings page.
+
+## 2026-03-19 Fly Deploy Script: Avoid Depot 401
+- Why: During release, `./deploy.sh` failed on Fly Depot with `401 Unauthorized`, which left the old 8-hour-JWT image running even though the repo had already been updated.
+- How: Updated `deploy.sh` to call `flyctl deploy --remote-only --depot=false` by default, and synced the README deployment section to match the script. Re-ran deployment with the non-Depot remote builder and verified the machine update completed successfully.
+- Result: Future scripted deployments no longer depend on Depot auth in this environment, and the latest auth/session release is now running on Fly.

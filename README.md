@@ -433,7 +433,7 @@ chmod +x deploy.sh
 
 - 检查 `flyctl` 是否可用
 - 检查 `roseate_storage` 是否已存在，不存在时自动创建
-- 执行 `flyctl deploy --app roseate-wms`
+- 执行 `flyctl deploy --app roseate-wms --remote-only --depot=false`，避免 Depot 授权失败时中断部署
 
 JWT 密钥需要单独通过 Fly secrets 配置，例如：
 
