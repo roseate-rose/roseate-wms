@@ -10,6 +10,7 @@ Legend:
 - `webtest_status`: status as written in webtest bug list.
 - `wms_status`: status in this repo.
   - `triaged`: confirmed and scoped, pending fix
+  - `implemented`: code changed locally and local verification passed; pending downstream browser re-check / commit / deploy
   - `needs-confirmation`: blocked by business decision / API contract decision
   - `fixed`: merged to `main`, tests passing, deployed to Fly
 
@@ -28,6 +29,7 @@ Legend:
 | BUG-07 | High | Open | fixed | `/inventory/reserve` now creates `manual` order + allocations; releasable via `/orders/cancel`. Commit `a86db35`. |
 | BUG-08 | Medium | Open | fixed | `find_product()` returns 404 if hb_code not found; no barcode fallthrough. Commit `a86db35`. |
 | OBS-03 | Medium | Open | fixed | Added `POST /api/v1/orders/cancel` to release reserved allocations. Commit `a86db35`. |
+| BUG-09 | Medium | Open | implemented | Frontend `/settings` now uses `meta.adminOnly`, and the sidebar hides “设置” for non-admin users. Local frontend build passed; downstream browser re-check still pending. |
 
 ## Details
 
@@ -140,3 +142,28 @@ Fix:
 - Add `POST /api/v1/orders/cancel` and release `reserved_quantity` for all allocations.
 Fix commit: `a86db35`
 Verification: pytest `test_cancel_manual_reservation_releases_stock`.
+
+### BUG-09 Frontend `/settings` RBAC Gap (Implemented Locally)
+Problem:
+- The current frontend still allows `staff` users to access `/settings`, and the desktop sidebar renders the "设置" entry for all roles.
+
+Evidence in main repo:
+- [frontend/src/router/index.js](/Users/paul/Work/roseate-wms/frontend/src/router/index.js#L54) defines the `settings` route with `meta: { title: "设置" }`, but without `adminOnly: true`.
+- [frontend/src/router/index.js](/Users/paul/Work/roseate-wms/frontend/src/router/index.js#L131) only redirects non-admin users when `to.meta.adminOnly` is set, so `/settings` is currently unguarded.
+- [frontend/src/layouts/MainLayout.vue](/Users/paul/Work/roseate-wms/frontend/src/layouts/MainLayout.vue#L9) includes `{ name: "settings", label: "设置", path: "/settings" }` in the static sidebar list, and [frontend/src/layouts/MainLayout.vue](/Users/paul/Work/roseate-wms/frontend/src/layouts/MainLayout.vue#L19) returns that list unchanged for `visibleSidebarItems`.
+- [frontend/src/views/SettingsView.vue](/Users/paul/Work/roseate-wms/frontend/src/views/SettingsView.vue#L14) hides the admin-only user list inside the page, but the page itself remains accessible to `staff`.
+
+Fix:
+- Updated [frontend/src/router/index.js](/Users/paul/Work/roseate-wms/frontend/src/router/index.js#L54) so `/settings` now has `meta: { adminOnly: true, title: "设置" }`, which reuses the existing global `beforeEach` RBAC redirect.
+- Updated [frontend/src/layouts/MainLayout.vue](/Users/paul/Work/roseate-wms/frontend/src/layouts/MainLayout.vue#L12) so nav items can be marked `adminOnly`, and filtered the visible sidebar items using the stored role before rendering.
+
+Expected:
+- `staff`访问 `/settings` 应被前端路由守卫重定向到 `/`
+- `staff` 不应在侧边栏看到 “设置” 入口
+
+Verification:
+- `npm --prefix frontend run build` passed after the router/layout changes.
+- Browser-level re-check is still pending because the user explicitly asked not to run anything inside `roseate-wms-webtest`.
+
+Residual note:
+- This item should move from `implemented` to `fixed` after the browser regression project re-runs its RBAC checks and the app change is merged/deployed.

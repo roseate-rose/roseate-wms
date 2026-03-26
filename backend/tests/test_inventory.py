@@ -1039,6 +1039,101 @@ def test_products_import_preview_and_commit(client, auth_headers, staff_auth_hea
         assert product.get_extra_data().get("brand") == "Roseate"
 
 
+def test_products_import_handles_alias_headers_without_trailing_shift(client, auth_headers, app):
+    csv_content = (
+        "HB编码,商品名称,规格,计量单位,最小单位,采购单位,换算率,条码,扩展字段,Unnamed: 9\n"
+        'HBX002,偏移修复商品,20ml,瓶,支,盒,5,6908888888888,"{""series"":""Alignment""}",\n'
+    )
+
+    preview = client.post(
+        "/api/v1/products/import/preview",
+        data={
+            "mode": "skip",
+            "file": (BytesIO(csv_content.encode("utf-8")), "products-alias.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert preview.status_code == 200
+    preview_row = preview.get_json()["data"]["preview_rows"][0]
+    assert preview_row["unit"] == "瓶"
+    assert preview_row["base_unit"] == "支"
+    assert preview_row["purchase_unit"] == "盒"
+    assert preview_row["conversion_rate"] == 5
+
+    commit = client.post(
+        "/api/v1/products/import",
+        data={
+            "mode": "skip",
+            "file": (BytesIO(csv_content.encode("utf-8")), "products-alias.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert commit.status_code == 200
+
+    with app.app_context():
+        product = Product.query.filter_by(hb_code="HBX002").first()
+        assert product is not None
+        assert product.unit == "瓶"
+        assert product.base_unit == "支"
+        assert product.purchase_unit == "盒"
+        assert product.conversion_rate == 5
+        assert product.get_extra_data().get("series") == "Alignment"
+
+
+def test_product_update_and_delete_crud(client, auth_headers, app):
+    create = client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBEDIT001",
+            "barcode": "6907777777777",
+            "name": "待编辑商品",
+            "spec": "10ml",
+            "unit": "瓶",
+            "base_unit": "支",
+            "purchase_unit": "盒",
+            "conversion_rate": 4,
+            "extra_data": {"brand": "Before"},
+        },
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+
+    update = client.put(
+        "/api/v1/products/HBEDIT001",
+        json={
+            "hb_code": "HBEDIT001",
+            "barcode": "6907777777778",
+            "name": "已编辑商品",
+            "spec": "20ml",
+            "unit": "盒",
+            "base_unit": "支",
+            "purchase_unit": "箱",
+            "conversion_rate": 12,
+            "extra_data": {"brand": "After"},
+        },
+        headers=auth_headers,
+    )
+    assert update.status_code == 200
+    assert update.get_json()["data"]["product"]["name"] == "已编辑商品"
+
+    with app.app_context():
+        product = Product.query.filter_by(hb_code="HBEDIT001").first()
+        assert product is not None
+        assert product.name == "已编辑商品"
+        assert product.spec == "20ml"
+        assert product.barcode == "6907777777778"
+        assert product.purchase_unit == "箱"
+        assert product.conversion_rate == 12
+
+    delete = client.delete("/api/v1/products/HBEDIT001", headers=auth_headers)
+    assert delete.status_code == 200
+
+    with app.app_context():
+        assert Product.query.filter_by(hb_code="HBEDIT001").first() is None
+
+
 def test_inbound_import_unit_conversion_and_merge(client, auth_headers, app):
     client.post(
         "/api/v1/products",
@@ -1152,6 +1247,90 @@ def test_orders_import_reserve_and_extra_data(client, auth_headers, app):
         batch = Batch.query.filter_by(hb_code="HBOM001").first()
         assert batch is not None
         assert batch.reserved_quantity == 3
+
+
+def test_wechat_shop_orders_import_uses_custom_code_and_preserves_row_extra(client, auth_headers, app):
+    client.post(
+        "/api/v1/products",
+        json={
+            "hb_code": "HBWX001",
+            "barcode": "6905555555555",
+            "name": "微信订单导入商品",
+            "spec": "40g",
+            "unit": "罐",
+            "base_unit": "罐",
+            "purchase_unit": "盒",
+            "conversion_rate": 6,
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/channel-mappings",
+        json={
+            "channel_name": "微信小店",
+            "external_sku_id": "HBWX001",
+            "hb_code": "HBWX001",
+        },
+        headers=auth_headers,
+    )
+    client.post(
+        "/api/v1/inventory/inbound",
+        json={
+            "hb_code": "HBWX001",
+            "batch_no": "WX-BATCH-1",
+            "expiry_date": "2027-06-30",
+            "quantity": 10,
+            "cost": 20.0,
+        },
+        headers=auth_headers,
+    )
+
+    csv_content = (
+        "订单号,订单下单时间,订单状态,收件人姓名,收件人地址,收件人手机,商家备注,商品名称,商品编码(平台),商品编码(自定义),SKU编码(自定义),商品属性,商品价格(单件),商品实际价格(单件),商品实际价格(总共),商品数量,商品售后\n"
+        "WX-ORDER-001,2026-03-17 22:38:35,已完成,KK,北京市顺义区,14700000000,老客户,【农科院】玫瑰花蕾茶40g/罐·高倍活性新品种·0硫0农残【色然犀】,10000318090949,HBWX001,HBWX001,净含量:40g,68.00,68.00,136.00,2,无\n"
+    )
+
+    preview = client.post(
+        "/api/v1/orders/import/preview",
+        data={
+            "default_channel_name": "微信小店",
+            "template": "wechat_shop",
+            "file": (BytesIO(csv_content.encode("utf-8")), "wechat-orders.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.get_json()["data"]
+    assert preview_payload["valid_rows"] == 1
+    assert preview_payload["mapping_effective"]["external_order_no"] == "订单号"
+    assert preview_payload["mapping_effective"]["external_sku_id"] in {"商品编码(自定义)", "SKU编码(自定义)"}
+    assert preview_payload["mapping_effective"]["quantity"] == "商品数量"
+
+    commit = client.post(
+        "/api/v1/orders/import",
+        data={
+            "default_channel_name": "微信小店",
+            "template": "wechat_shop",
+            "file": (BytesIO(csv_content.encode("utf-8")), "wechat-orders.csv"),
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+    assert commit.status_code == 200
+    assert commit.get_json()["data"]["created"] == 1
+
+    with app.app_context():
+        order = SalesOrder.query.filter_by(channel_name="微信小店", hb_code="HBWX001").order_by(SalesOrder.id.desc()).first()
+        assert order is not None
+        extra = order.get_extra_data()
+        assert extra.get("template") == "wechat_shop"
+        assert extra.get("external_order_no") == "WX-ORDER-001"
+        row_extra = extra.get("row_extra") or {}
+        assert row_extra.get("订单下单时间") == "2026-03-17 22:38:35"
+        assert row_extra.get("收件人姓名") == "KK"
+        assert row_extra.get("商品名称")
+        assert row_extra.get("商品售后") == "无"
 
 
 def test_order_sync_idempotency_with_external_order_no(client, auth_headers, app):

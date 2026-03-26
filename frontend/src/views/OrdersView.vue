@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 
 import http from "../api/http";
+import { formatBoundQuantity } from "../utils/quantity";
 
 const loading = ref(false);
 const syncing = ref(false);
@@ -142,7 +143,7 @@ onMounted(loadOrders);
                   #{{ order.id }} · {{ order.channel_name }} · {{ order.external_sku_id }}
                 </p>
                 <p class="mt-1 text-xs text-slate-500">
-                  {{ order.hb_code }} · 数量 {{ order.quantity }} · {{ order.created_at }}
+                  {{ order.hb_code }} · 数量 {{ formatBoundQuantity(order.quantity, order) }} · {{ order.created_at }}
                 </p>
               </div>
               <div class="flex items-center gap-3">

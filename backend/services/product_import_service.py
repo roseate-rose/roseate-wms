@@ -1,8 +1,21 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.services.tabular_service import guess_column, read_tabular
+
 
 REQUIRED_COLUMNS = {"hb_code", "name", "spec"}
+PRODUCT_IMPORT_ALIASES = {
+    "hb_code": ["hb_code", "HB编码", "商品编码", "货号", "内部编码"],
+    "barcode": ["barcode", "条码", "国际条码"],
+    "name": ["name", "商品名称", "名称"],
+    "spec": ["spec", "规格", "规格型号"],
+    "unit": ["unit", "单位", "计量单位", "measure_unit"],
+    "base_unit": ["base_unit", "最小单位", "最小售卖单位", "基本单位"],
+    "purchase_unit": ["purchase_unit", "采购单位", "进货单位"],
+    "conversion_rate": ["conversion_rate", "换算率", "换算比例", "装箱数"],
+    "extra_data": ["extra_data", "extra_data(JSON)", "扩展字段", "扩展字段(JSON)", "额外信息", "附加信息"],
+}
 
 
 def _safe_str(value) -> str:
@@ -49,20 +62,20 @@ def _parse_extra_data(value) -> Dict[str, Any]:
     return {"_raw": raw}
 
 
-def _read_tabular(file_stream, filename: str) -> Tuple[List[str], List[Dict[str, Any]]]:
-    # Use pandas when available (we already depend on it for other exports/imports).
-    import pandas as pd
+def resolve_product_import_mapping(columns: List[str]) -> Dict[str, Optional[str]]:
+    return {field: guess_column(columns, aliases) for field, aliases in PRODUCT_IMPORT_ALIASES.items()}
 
-    name = (filename or "").lower()
-    if name.endswith(".xlsx") or name.endswith(".xls"):
-        df = pd.read_excel(file_stream)
-    else:
-        df = pd.read_csv(file_stream)
 
-    df = df.fillna("")
-    columns = [str(c).strip() for c in df.columns.tolist()]
-    rows = df.to_dict(orient="records")
-    return columns, rows
+def canonicalize_product_row(
+    raw: Dict[str, Any],
+    *,
+    column_mapping: Dict[str, Optional[str]],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    for field in PRODUCT_IMPORT_ALIASES.keys():
+        source_col = column_mapping.get(field)
+        payload[field] = raw.get(source_col, "") if source_col else ""
+    return payload
 
 
 def normalize_product_row(row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -120,11 +133,12 @@ def import_products_from_file(
     if mode not in {"skip", "overwrite"}:
         raise ValueError("mode must be one of: skip, overwrite")
 
-    columns, raw_rows = _read_tabular(file_stream, filename=filename)
+    columns, raw_rows = read_tabular(file_stream, filename=filename)
+    column_mapping = resolve_product_import_mapping(columns)
     normalized_rows = []
     errors = []
 
-    missing = REQUIRED_COLUMNS - {c.strip() for c in columns}
+    missing = [field for field in REQUIRED_COLUMNS if not column_mapping.get(field)]
     if missing:
         raise ValueError(f"missing required columns: {', '.join(sorted(missing))}")
 
@@ -132,7 +146,8 @@ def import_products_from_file(
     barcode_to_hb = {}
 
     for idx, raw in enumerate(raw_rows, start=1):
-        payload, err = normalize_product_row(raw)
+        canonical_row = canonicalize_product_row(raw, column_mapping=column_mapping)
+        payload, err = normalize_product_row(canonical_row)
         if err:
             errors.append({"row_number": idx, "error": err, "raw": raw})
             continue
@@ -188,6 +203,7 @@ def import_products_from_file(
         "total_rows": len(raw_rows),
         "valid_rows": len(normalized_rows),
         "error_rows": len(errors),
+        "column_mapping": column_mapping,
         "preview_rows": preview_rows,
         "errors": errors[:10],
     }

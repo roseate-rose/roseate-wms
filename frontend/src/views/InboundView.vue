@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 
 import http from "../api/http";
 import { getStoredRole } from "../auth/session";
+import { formatBoundQuantity } from "../utils/quantity";
 
 const router = useRouter();
 const role = getStoredRole();
@@ -109,7 +110,7 @@ async function submitInbound() {
     };
     const { data } = await http.post("/inventory/inbound", payload);
 
-    inboundSuccess.value = `入库成功：${data.data.action === "merged" ? "已合并现有批次" : "已创建新批次"}，按${selectedProduct.value.base_unit}计共入 ${data.data.normalized_quantity}，当前总库存 ${data.data.product.total_stock}`;
+    inboundSuccess.value = `入库成功：${data.data.action === "merged" ? "已合并现有批次" : "已创建新批次"}，本次入库 ${formatBoundQuantity(data.data.normalized_quantity, data.data.product)}，当前总库存 ${formatBoundQuantity(data.data.product.total_stock, data.data.product)}`;
     selectedProduct.value = data.data.product;
     batchForm.batch_no = "";
     batchForm.production_date = "";
@@ -241,7 +242,7 @@ async function createQuickMapping() {
             </div>
             <div>
               <p class="text-sm text-slate-500">当前可售库存</p>
-              <p class="text-base font-semibold text-slate-900">{{ selectedProduct.sellable_stock }}</p>
+              <p class="text-base font-semibold text-slate-900">{{ formatBoundQuantity(selectedProduct.sellable_stock, selectedProduct) }}</p>
             </div>
           </div>
         </div>

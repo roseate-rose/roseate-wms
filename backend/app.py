@@ -124,6 +124,45 @@ def parse_non_negative_float(value, field_name):
     return parsed, None
 
 
+def parse_product_payload(payload, *, existing_product=None):
+    hb_code = (payload.get("hb_code") or "").strip()
+    if existing_product:
+        hb_code = existing_product.hb_code
+
+    name = (payload.get("name") or "").strip()
+    spec = (payload.get("spec") or "").strip()
+    unit = (payload.get("unit") or payload.get("base_unit") or "").strip()
+    base_unit = (payload.get("base_unit") or unit or "").strip()
+    purchase_unit = (payload.get("purchase_unit") or base_unit or "").strip()
+    barcode = (payload.get("barcode") or "").strip() or None
+    extra_data = payload.get("extra_data") or {}
+
+    conversion_rate, conversion_error = parse_positive_int(
+        payload.get("conversion_rate", 1),
+        "conversion_rate",
+    )
+    if conversion_error:
+        return None, conversion_error
+
+    if not all([hb_code, name, spec, unit, base_unit, purchase_unit]):
+        return None, "hb_code, name, spec, unit, base_unit and purchase_unit are required"
+
+    return (
+        {
+            "hb_code": hb_code,
+            "barcode": barcode,
+            "name": name,
+            "spec": spec,
+            "unit": unit,
+            "base_unit": base_unit,
+            "purchase_unit": purchase_unit,
+            "conversion_rate": conversion_rate,
+            "extra_data": extra_data,
+        },
+        None,
+    )
+
+
 def find_product(payload):
     hb_code = (payload.get("hb_code") or "").strip()
     barcode = (payload.get("barcode") or "").strip()
@@ -221,6 +260,9 @@ def serialize_batch_for_report(batch, today=None):
         "current_quantity": batch.current_quantity,
         "reserved_quantity": batch.reserved_quantity,
         "available_quantity": batch.available_quantity,
+        "base_unit": batch.product.base_unit if batch.product else None,
+        "purchase_unit": batch.product.purchase_unit if batch.product else None,
+        "conversion_rate": batch.product.conversion_rate if batch.product else None,
         "status": status,
     }
 
@@ -954,28 +996,11 @@ def register_routes(app):
     @admin_required
     def create_product():
         payload = request.get_json(silent=True) or {}
-
-        hb_code = (payload.get("hb_code") or "").strip()
-        name = (payload.get("name") or "").strip()
-        spec = (payload.get("spec") or "").strip()
-        unit = (payload.get("unit") or payload.get("base_unit") or "").strip()
-        base_unit = (payload.get("base_unit") or unit or "").strip()
-        purchase_unit = (payload.get("purchase_unit") or base_unit or "").strip()
-        barcode = (payload.get("barcode") or "").strip() or None
-        extra_data = payload.get("extra_data") or {}
-
-        conversion_rate, conversion_error = parse_positive_int(
-            payload.get("conversion_rate", 1),
-            "conversion_rate",
-        )
-        if conversion_error:
-            return api_response(code=400, msg=conversion_error)
-
-        if not all([hb_code, name, spec, unit, base_unit, purchase_unit]):
-            return api_response(
-                code=400,
-                msg="hb_code, name, spec, unit, base_unit and purchase_unit are required",
-            )
+        product_payload, product_error = parse_product_payload(payload)
+        if product_error:
+            return api_response(code=400, msg=product_error)
+        hb_code = product_payload["hb_code"]
+        barcode = product_payload["barcode"]
 
         if Product.query.filter_by(hb_code=hb_code).first():
             return api_response(code=409, msg="product hb_code already exists")
@@ -986,18 +1011,75 @@ def register_routes(app):
         product = Product(
             hb_code=hb_code,
             barcode=barcode,
-            name=name,
-            spec=spec,
-            unit=unit,
-            base_unit=base_unit,
-            purchase_unit=purchase_unit,
-            conversion_rate=conversion_rate,
+            name=product_payload["name"],
+            spec=product_payload["spec"],
+            unit=product_payload["unit"],
+            base_unit=product_payload["base_unit"],
+            purchase_unit=product_payload["purchase_unit"],
+            conversion_rate=product_payload["conversion_rate"],
         )
-        product.set_extra_data(extra_data)
+        product.set_extra_data(product_payload["extra_data"])
         db.session.add(product)
         db.session.commit()
 
         return api_response(code=201, data={"product": product.to_dict(include_stock=True)})
+
+    @app.put("/api/v1/products/<string:hb_code>")
+    @admin_required
+    def update_product(hb_code):
+        product = Product.query.filter_by(hb_code=hb_code).first()
+        if not product:
+            return api_response(code=404, msg="product not found")
+
+        payload = request.get_json(silent=True) or {}
+        incoming_hb_code = (payload.get("hb_code") or "").strip()
+        if incoming_hb_code and incoming_hb_code != hb_code:
+            return api_response(code=400, msg="hb_code cannot be changed")
+
+        product_payload, product_error = parse_product_payload(payload, existing_product=product)
+        if product_error:
+            return api_response(code=400, msg=product_error)
+
+        barcode = product_payload["barcode"]
+        if barcode:
+            other = Product.query.filter_by(barcode=barcode).first()
+            if other and other.hb_code != product.hb_code:
+                return api_response(code=409, msg="barcode already exists")
+
+        product.barcode = barcode
+        product.name = product_payload["name"]
+        product.spec = product_payload["spec"]
+        product.unit = product_payload["unit"]
+        product.base_unit = product_payload["base_unit"]
+        product.purchase_unit = product_payload["purchase_unit"]
+        product.conversion_rate = product_payload["conversion_rate"]
+        product.set_extra_data(product_payload["extra_data"])
+        db.session.commit()
+
+        return api_response(data={"product": product.to_dict(include_stock=True)})
+
+    @app.delete("/api/v1/products/<string:hb_code>")
+    @admin_required
+    def delete_product(hb_code):
+        product = Product.query.filter_by(hb_code=hb_code).first()
+        if not product:
+            return api_response(code=404, msg="product not found")
+
+        has_dependencies = any(
+            [
+                Batch.query.filter_by(hb_code=hb_code).first(),
+                ChannelMapping.query.filter_by(hb_code=hb_code).first(),
+                SalesOrder.query.filter_by(hb_code=hb_code).first(),
+                InventoryTransaction.query.filter_by(hb_code=hb_code).first(),
+                InboundLine.query.filter_by(hb_code=hb_code).first(),
+            ]
+        )
+        if has_dependencies:
+            return api_response(code=409, msg="product has dependent inventory/order records and cannot be deleted")
+
+        db.session.delete(product)
+        db.session.commit()
+        return api_response(data={"hb_code": hb_code})
 
     @app.post("/api/v1/products/import/preview")
     @admin_required
@@ -1028,6 +1110,7 @@ def register_routes(app):
                 "total_rows": result["total_rows"],
                 "valid_rows": result["valid_rows"],
                 "error_rows": result["error_rows"],
+                "column_mapping": result.get("column_mapping", {}),
                 "errors": result["errors"],
             }
         )

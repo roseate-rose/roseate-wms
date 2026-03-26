@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import http from "../api/http";
+import { formatBoundQuantity, formatQuantityWithUnit } from "../utils/quantity";
 
 const route = useRoute();
 
@@ -39,7 +40,7 @@ async function reserveInventory() {
       hb_code: route.params.hbCode,
       quantity: Number(reserveForm.quantity),
     });
-    successMessage.value = `预占成功，已预占 ${data.data.reserved_quantity} ${product.value?.base_unit || ""}`.trim();
+    successMessage.value = `预占成功，已预占 ${formatBoundQuantity(data.data.reserved_quantity, product.value)}`;
     await loadProduct();
   } catch (error) {
     errorMessage.value = error.response?.data?.msg || "预占失败";
@@ -70,15 +71,15 @@ onMounted(loadProduct);
           <div class="grid grid-cols-3 gap-3">
             <div class="rounded-3xl bg-slate-50 px-4 py-3 text-center">
               <p class="text-xs text-slate-500">总库存</p>
-              <p class="mt-2 text-xl font-semibold text-slate-900">{{ product.total_stock }}</p>
+              <p class="mt-2 text-xl font-semibold text-slate-900">{{ formatBoundQuantity(product.total_stock, product) }}</p>
             </div>
             <div class="rounded-3xl bg-amber-50 px-4 py-3 text-center">
               <p class="text-xs text-slate-500">预占库存</p>
-              <p class="mt-2 text-xl font-semibold text-amber-700">{{ product.reserved_stock }}</p>
+              <p class="mt-2 text-xl font-semibold text-amber-700">{{ formatBoundQuantity(product.reserved_stock, product) }}</p>
             </div>
             <div class="rounded-3xl bg-emerald-50 px-4 py-3 text-center">
               <p class="text-xs text-slate-500">可售库存</p>
-              <p class="mt-2 text-xl font-semibold text-emerald-700">{{ product.sellable_stock }}</p>
+              <p class="mt-2 text-xl font-semibold text-emerald-700">{{ formatBoundQuantity(product.sellable_stock, product) }}</p>
             </div>
           </div>
         </div>
@@ -146,21 +147,21 @@ onMounted(loadProduct);
                   </p>
                 </div>
                 <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
-                  可售 {{ batch.available_quantity }}
+                  可售 {{ formatBoundQuantity(batch.available_quantity, product) }}
                 </span>
               </div>
               <div class="mt-4 grid grid-cols-3 gap-3 text-sm">
                 <div>
                   <p class="text-slate-500">实物库存</p>
-                  <p class="font-medium text-slate-800">{{ batch.current_quantity }}</p>
+                  <p class="font-medium text-slate-800">{{ formatBoundQuantity(batch.current_quantity, product) }}</p>
                 </div>
                 <div>
                   <p class="text-slate-500">预占库存</p>
-                  <p class="font-medium text-slate-800">{{ batch.reserved_quantity }}</p>
+                  <p class="font-medium text-slate-800">{{ formatBoundQuantity(batch.reserved_quantity, product) }}</p>
                 </div>
                 <div>
                   <p class="text-slate-500">成本</p>
-                  <p class="font-medium text-slate-800">{{ batch.cost }}</p>
+                  <p class="font-medium text-slate-800">{{ formatQuantityWithUnit(batch.cost, "元") }}</p>
                 </div>
               </div>
             </div>

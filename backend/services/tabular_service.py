@@ -12,14 +12,42 @@ def read_tabular(file_stream, filename: str) -> Tuple[List[str], List[Dict[str, 
 
     name = (filename or "").lower()
     if name.endswith(".xlsx") or name.endswith(".xls"):
-        df = pd.read_excel(file_stream)
+        df = pd.read_excel(file_stream, dtype=object)
     else:
         # Pandas handles utf-8-sig and most delimiter cases well for our usage.
-        df = pd.read_csv(file_stream)
+        df = pd.read_csv(file_stream, dtype=object, keep_default_na=False)
 
     df = df.fillna("")
-    columns = [str(c).strip() for c in df.columns.tolist()]
-    rows = df.to_dict(orient="records")
+    kept_columns: List[str] = []
+    source_columns: List[str] = []
+    seen_names: Dict[str, int] = {}
+
+    for index, column in enumerate(df.columns.tolist(), start=1):
+        raw_name = "" if column is None else str(column).strip()
+        is_unnamed = not raw_name or raw_name.lower().startswith("unnamed:")
+        series = df.iloc[:, index - 1]
+        has_values = any(str(value).strip() for value in series.tolist() if value not in (None, ""))
+
+        if is_unnamed and not has_values:
+            continue
+
+        normalized_name = raw_name or f"__unnamed_{index}"
+        duplicate_count = seen_names.get(normalized_name, 0)
+        seen_names[normalized_name] = duplicate_count + 1
+        final_name = normalized_name if duplicate_count == 0 else f"{normalized_name}__dup{duplicate_count + 1}"
+
+        kept_columns.append(final_name)
+        source_columns.append(column)
+
+    rows: List[Dict[str, Any]] = []
+    for _, frame_row in df.iterrows():
+        payload: Dict[str, Any] = {}
+        for final_name, source_name in zip(kept_columns, source_columns):
+            value = frame_row[source_name]
+            payload[final_name] = "" if value is None else value
+        rows.append(payload)
+
+    columns = kept_columns
     return columns, rows
 
 
@@ -65,4 +93,3 @@ def build_row_extra_data(raw_row: Dict[str, Any], used_columns: List[str]) -> Di
             continue
         extra[str(col)] = value
     return extra
-

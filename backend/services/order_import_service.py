@@ -43,6 +43,33 @@ def guess_order_mapping(columns: List[str]) -> Dict[str, Optional[str]]:
     }
 
 
+def guess_wechat_shop_mapping(columns: List[str]) -> Dict[str, Optional[str]]:
+    return {
+        "channel_name": guess_column(columns, ["渠道", "平台", "店铺"]),
+        "external_sku_id": guess_column(
+            columns,
+            [
+                "SKU编码(自定义)",
+                "商品编码(自定义)",
+                "外部skuid",
+                "外部sku",
+                "sku",
+                "商品编码",
+                "货号",
+            ],
+        ),
+        "quantity": guess_column(columns, ["商品数量", "数量", "件数"]),
+        "external_order_no": guess_column(columns, ["订单号", "外部订单号", "平台订单号"]),
+    }
+
+
+def resolve_template_mapping(template_name: str, columns: List[str]) -> Dict[str, Optional[str]]:
+    template = (template_name or "generic").strip().lower()
+    if template in {"wechat", "wechat_shop", "weixin", "weixin_shop"}:
+        return guess_wechat_shop_mapping(columns)
+    return guess_order_mapping(columns)
+
+
 def build_order_rows_from_file(
     *,
     file_stream,
@@ -60,7 +87,7 @@ def build_order_rows_from_file(
     """
 
     columns, raw_rows = read_tabular(file_stream, filename=filename)
-    guessed = guess_order_mapping(columns)
+    guessed = resolve_template_mapping(template_name, columns)
 
     effective_mapping: Dict[str, str] = {}
     for key, col in (mapping or {}).items():
@@ -155,4 +182,3 @@ def build_order_rows_from_file(
         "preview_rows": [r["preview"] | {"row_number": r["row_number"]} for r in rows[:5]],
         "errors": errors[:10],
     }
-

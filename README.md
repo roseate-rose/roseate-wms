@@ -23,15 +23,18 @@ Roseate-WMS（蕴香和本轻量化仓库管理系统）面向美妆、医药等
 - 预占库存：`reserved_quantity`、FIFO 预占、可售库存计算
 - 渠道映射：`ChannelMapping` 支持外部 SKU 与内部 `hb_code` 绑定
 - 商品详情页与渠道映射管理页
+- 商品主档支持管理员在 UI 直接修正（更新 / 删除受限于关联数据）
 
 ### Stage 4
 - CSV 数据导入：预览、确认保存、单位换算初始化
+- 商品导入页内置标准表头说明与识别结果卡片，降低错列导入风险
 - 导入默认值：缺失 `expiry_date` 自动补成 `2099-12-31`
 - 到期预警看板：已过期 / 临期 30 天 / 健康
 - 到期报表：状态筛选、颜色标识、到期日升序批次列表
 
 ### Stage 5
 - 订单闭环：渠道订单同步、FIFO 预占、发货核销、`OUT` 流水留痕
+- 订单导入支持微信小店标准导出模板，并在页面内展示关键映射、表头清单与 CSV 示例下载
 - RBAC：`admin_required` 保护导入、导出、渠道映射写入等敏感接口
 - 报表导出：管理员可下载商品 + 批次全量 CSV / Excel
 - Web/H5 协同：订单列表、下载按钮、未知扫码快捷映射、按角色隐藏菜单
@@ -156,11 +159,19 @@ roseate-wms/
 - `GET /api/v1/products`
 - `GET /api/v1/products/<hb_code>`
 - `POST /api/v1/products`
+- `PUT /api/v1/products/<hb_code>`
+  - 更新商品主档（`hb_code` 不可修改）
+  - 仅 `admin` 可调用
+- `DELETE /api/v1/products/<hb_code>`
+  - 删除无关联库存/订单/流水/入库记录的商品主档
+  - 仅 `admin` 可调用
 - `POST /api/v1/products/import/preview`
   - `multipart/form-data`
   - 字段：`file`, `mode=skip|overwrite`
   - 必填列：`hb_code`, `name`, `spec`
   - 可选列：`barcode`, `unit`, `base_unit`, `purchase_unit`, `conversion_rate`, `extra_data`(JSON)
+  - 支持常见中文表头别名（如 `HB编码`、`商品名称`、`计量单位`、`最小单位`、`采购单位`、`换算率`）
+  - 会忽略纯空白的 `Unnamed:*` 尾随列，避免 `unit` 之后字段错位污染
   - 返回前 5 条预览数据
 - `POST /api/v1/products/import`
   - `multipart/form-data`
@@ -221,6 +232,7 @@ roseate-wms/
 - `POST /api/v1/orders/import/preview`
   - `multipart/form-data`
   - 字段：`file`, `mapping`(JSON，可选), `default_channel_name`(可选), `template`(可选)
+  - 支持 `template=wechat_shop`，按提供的微信小店标准导出表头自动识别 `订单号` / `SKU编码(自定义)` / `商品编码(自定义)` / `商品数量`
   - 预览时会检查渠道映射是否存在，并对可售库存做粗略预估（产品级别）
 - `POST /api/v1/orders/import`
   - `multipart/form-data`
@@ -257,12 +269,12 @@ roseate-wms/
 ## 前端页面
 - `/login`：登录页
 - `/`：首页保质期预警看板
-- `/products`：商品中心
+- `/products`：商品中心，管理员可新建 / 编辑 / 删除商品主档，并在导入面板直接查看标准表头与识别结果
 - `/products/:hbCode`：商品详情，包含预占库存和批次明细
 - `/channels`：渠道映射管理
 - `/data`：CSV 数据导入页，先预览后保存
 - `/orders`：渠道订单列表，支持同步订单与发货核销
-- `/orders-import`：批量订单导入（列映射适配菜鸟/顺丰模板）
+- `/orders-import`：批量订单导入（渠道可选、微信小店优先、列映射适配微信小店 / 菜鸟 / 顺丰模板，并显示模板字段清单与 CSV 示例下载）
 - `/finance`：财务统计入口，仅管理员可见
 - `/inbound`：H5 优先入库流程，支持采购单位和最小单位切换
 - `/inbound-import`：批量入库导入（生成入库单、入库明细与 IN 流水）

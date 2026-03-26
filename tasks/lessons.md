@@ -7,3 +7,4 @@
 - Cross-repo E2E tooling depends on stable local ports. Do not silently switch ports; keep backend/frontend ports fixed and kill conflicting listeners explicitly when needed.
 - `screen -list` on macOS may exit with code 1 even when sessions exist; scripts must tolerate this (avoid `set -euo pipefail` pipeline exits).
 - When the user changes auth policy or seeded-account expectations, update all four surfaces together: backend config, tests, operator-facing docs, and deployment state.
+- For `roseate-wms-webtest`, do not run commands or make changes inside that repo unless the user explicitly authorizes it; record discovered issues only in `roseate-wms` so the webtest project can read them separately.

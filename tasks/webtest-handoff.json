@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-03-26T23:59:59+08:00",
+  "producer_repo": "roseate-wms",
+  "consumer_repo": "roseate-wms-webtest",
+  "polling_contract": {
+    "consume_when_status_in": [
+      "ready_for_webtest"
+    ],
+    "producer_writes_only_this_repo": true,
+    "consumer_should_treat_this_file_as_read_only": true,
+    "result_handoff": "consumer should report verification results in its own repo or external coordination channel"
+  },
+  "status_legend": {
+    "triaged": "Issue confirmed in the main repo but not implemented yet",
+    "implemented": "Main repo code changed and local main-repo verification passed",
+    "ready_for_webtest": "Ready for downstream browser verification in roseate-wms-webtest",
+    "webtest_passed": "Browser verification passed in the dedicated webtest project",
+    "webtest_failed": "Browser verification failed in the dedicated webtest project"
+  },
+  "requests": [
+    {
+      "request_id": "2026-03-26-bug09-settings-rbac",
+      "status": "ready_for_webtest",
+      "summary": "Verify BUG-09 frontend RBAC fix for /settings",
+      "bug_ids": [
+        "BUG-09"
+      ],
+      "priority": "medium",
+      "changed_files": [
+        "frontend/src/router/index.js",
+        "frontend/src/layouts/MainLayout.vue"
+      ],
+      "expected_behavior": [
+        "staff visiting /settings should be redirected to /",
+        "staff should not see the 设置 sidebar link",
+        "admin should still be able to access /settings",
+        "admin should still see the 设置 sidebar link"
+      ],
+      "local_verification": [
+        "npm --prefix frontend run build passed"
+      ],
+      "suggested_webtest_specs": [
+        "tests/rbac/access-control.spec.ts"
+      ],
+      "source_records": [
+        "tasks/webtest-bugs.md",
+        "tasks/todo.md",
+        "tasks/devlog.md"
+      ],
+      "notes": [
+        "Producer-side changes were intentionally limited to the main repo only.",
+        "This request should move to webtest_passed or webtest_failed only after the dedicated webtest project reruns its browser checks."
+      ]
+    },
+    {
+      "request_id": "2026-03-26-import-master-wechat-ux",
+      "status": "ready_for_webtest",
+      "summary": "Verify product import alignment, item-master CRUD, WeChat shop order import, and explicit import guidance UX",
+      "bug_ids": [
+        "IMPORT-ALIGNMENT",
+        "ITEM-MASTER-CRUD",
+        "WECHAT-SHOP-IMPORT",
+        "QUANTITY-UNIT-DISPLAY"
+      ],
+      "priority": "high",
+      "changed_files": [
+        "backend/services/tabular_service.py",
+        "backend/services/product_import_service.py",
+        "backend/services/order_import_service.py",
+        "backend/app.py",
+        "backend/models.py",
+        "frontend/src/utils/quantity.js",
+        "frontend/src/views/ProductsView.vue",
+        "frontend/src/views/ProductDetailView.vue",
+        "frontend/src/views/InboundView.vue",
+        "frontend/src/views/OtherView.vue",
+        "frontend/src/views/OrdersView.vue",
+        "frontend/src/views/StockView.vue",
+        "frontend/src/views/OrdersImportView.vue",
+        "frontend/public/samples/orders-import-generic-sample.csv",
+        "frontend/public/samples/orders-import-wechat-shop-sample.csv"
+      ],
+      "expected_behavior": [
+        "Product import preview should recognize the standard product headers or supported Chinese aliases without shifting unit-related fields when trailing blank columns exist",
+        "Products page should expose visible import guidance, including standard header chips and recognition results after preview",
+        "Admin should be able to edit and delete item-master records from the Products UI when no dependent records exist",
+        "Inventory-facing pages should render quantities with bound units, including derived purchase-unit decimal views such as 1 支 (0.2 盒) when applicable",
+        "Orders import with template=wechat_shop should auto-recognize order number, custom SKU/code, and quantity from the provided WeChat export",
+        "Orders import page should visibly show template docs, mapping status cards, the WeChat header list, a channel selector with 微信小店 first, and downloadable CSV samples before import"
+      ],
+      "local_verification": [
+        "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest backend/tests passed",
+        "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest backend/tests/test_inventory.py -k \"wechat_shop or products_import_handles_alias_headers_without_trailing_shift or product_update_and_delete_crud or orders_import_reserve_and_extra_data\" passed",
+        "npm --prefix frontend run build passed"
+      ],
+      "suggested_webtest_specs": [
+        "tests/imports/products-import.spec.ts",
+        "tests/imports/orders-import.spec.ts",
+        "tests/products/item-master.spec.ts",
+        "tests/inventory/quantity-display.spec.ts"
+      ],
+      "source_records": [
+        "tasks/todo.md",
+        "tasks/devlog.md",
+        "README.md"
+      ],
+      "notes": [
+        "Use only the main roseate-wms app during browser verification; do not modify the webtest repo’s fixture contracts unless separately authorized.",
+        "For WeChat verification, prefer the provided CSV header sample and confirm that extra unmapped columns remain available in saved order extra_data.",
+        "This request is ready for polling by the separate webtest agent."
+      ]
+    }
+  ]
+}

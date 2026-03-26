@@ -180,6 +180,9 @@ class Batch(ExtraDataMixin, db.Model):
             "current_quantity": self.current_quantity,
             "reserved_quantity": self.reserved_quantity,
             "available_quantity": self.available_quantity,
+            "base_unit": self.product.base_unit if self.product else None,
+            "purchase_unit": self.product.purchase_unit if self.product else None,
+            "conversion_rate": self.product.conversion_rate if self.product else None,
             "extra_data": self.get_extra_data(),
         }
 
@@ -318,6 +321,9 @@ class SalesOrder(TimestampMixin, ExtraDataMixin, db.Model):
             "status": self.status,
             "fulfilled_at": self.fulfilled_at.isoformat() if self.fulfilled_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "base_unit": self.product.base_unit if self.product else None,
+            "purchase_unit": self.product.purchase_unit if self.product else None,
+            "conversion_rate": self.product.conversion_rate if self.product else None,
             "extra_data": self.get_extra_data(),
         }
 

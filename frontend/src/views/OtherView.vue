@@ -28,7 +28,7 @@ const items = computed(() => {
     },
     {
       title: "批量订单导入",
-      desc: "上传菜鸟/顺丰等模板并映射字段，批量锁定 FIFO 库存。",
+      desc: "先选渠道再导入模板，微信小店排在最上面，并可直接下载 CSV 示例。",
       to: "/orders-import",
       tag: "Web",
     },

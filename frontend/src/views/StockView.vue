@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import http from "../api/http";
+import { formatBoundQuantity, formatQuantityWithUnit } from "../utils/quantity";
 
 const route = useRoute();
 const router = useRouter();
@@ -124,19 +125,19 @@ watch(() => route.query.status, loadReport);
           </div>
           <div>
             <p class="text-slate-500">实物库存</p>
-            <p class="font-medium text-slate-800">{{ item.current_quantity }}</p>
+            <p class="font-medium text-slate-800">{{ formatBoundQuantity(item.current_quantity, item) }}</p>
           </div>
           <div>
             <p class="text-slate-500">预占库存</p>
-            <p class="font-medium text-slate-800">{{ item.reserved_quantity }}</p>
+            <p class="font-medium text-slate-800">{{ formatBoundQuantity(item.reserved_quantity, item) }}</p>
           </div>
           <div>
             <p class="text-slate-500">可售库存</p>
-            <p class="font-medium text-slate-800">{{ item.available_quantity }}</p>
+            <p class="font-medium text-slate-800">{{ formatBoundQuantity(item.available_quantity, item) }}</p>
           </div>
           <div>
             <p class="text-slate-500">成本</p>
-            <p class="font-medium text-slate-800">{{ item.cost }}</p>
+            <p class="font-medium text-slate-800">{{ formatQuantityWithUnit(item.cost, "元") }}</p>
           </div>
         </div>
       </article>

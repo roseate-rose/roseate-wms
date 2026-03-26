@@ -4,6 +4,19 @@ import { useRoute } from "vue-router";
 
 import http from "../api/http";
 import { getStoredRole } from "../auth/session";
+import { formatBoundQuantity } from "../utils/quantity";
+
+const PRODUCT_IMPORT_HEADERS = [
+  "hb_code",
+  "name",
+  "spec",
+  "barcode",
+  "unit",
+  "base_unit",
+  "purchase_unit",
+  "conversion_rate",
+  "extra_data(JSON)",
+];
 
 const route = useRoute();
 const role = getStoredRole();
@@ -17,6 +30,8 @@ const searchText = ref("");
 const products = ref([]);
 const showCreateForm = ref(false);
 const showImportPanel = ref(false);
+const formMode = ref("create");
+const deletingHbCode = ref("");
 
 const importMode = ref("skip");
 const importFile = ref(null);
@@ -56,7 +71,10 @@ const conversionHint = computed(() => {
 });
 
 function applyRouteDefaults() {
-  showCreateForm.value = route.query.create === "1";
+  if (route.query.create === "1") {
+    showCreateForm.value = true;
+    formMode.value = "create";
+  }
 
   if (route.query.barcode && !productForm.barcode) {
     productForm.barcode = String(route.query.barcode);
@@ -80,6 +98,7 @@ async function loadProducts() {
 }
 
 function resetForm() {
+  formMode.value = "create";
   productForm.hb_code = "";
   productForm.barcode = "";
   productForm.name = "";
@@ -90,6 +109,31 @@ function resetForm() {
   productForm.conversion_rate = 1;
   productForm.extra_data_text = "";
   jsonError.value = "";
+}
+
+function openCreateForm() {
+  resetForm();
+  showCreateForm.value = true;
+}
+
+function openEditForm(product) {
+  formMode.value = "edit";
+  showCreateForm.value = true;
+  jsonError.value = "";
+  errorMessage.value = "";
+  productForm.hb_code = product.hb_code || "";
+  productForm.barcode = product.barcode || "";
+  productForm.name = product.name || "";
+  productForm.spec = product.spec || "";
+  productForm.unit = product.unit || "";
+  productForm.base_unit = product.base_unit || "";
+  productForm.purchase_unit = product.purchase_unit || "";
+  productForm.conversion_rate = Number(product.conversion_rate || 1);
+  productForm.extra_data_text = JSON.stringify(product.extra_data || {}, null, 2);
+}
+
+function formatStock(item, key) {
+  return formatBoundQuantity(item?.[key], item);
 }
 
 function toggleExtra(hbCode) {
@@ -185,7 +229,7 @@ async function createProduct() {
   }
 
   try {
-    await http.post("/products", {
+    const payload = {
       hb_code: productForm.hb_code.trim(),
       barcode: productForm.barcode.trim(),
       name: productForm.name.trim(),
@@ -195,15 +239,44 @@ async function createProduct() {
       purchase_unit: productForm.purchase_unit.trim(),
       conversion_rate: Number(productForm.conversion_rate),
       extra_data: extraData,
-    });
+    };
+
+    if (formMode.value === "edit") {
+      await http.put(`/products/${productForm.hb_code.trim()}`, payload);
+    } else {
+      await http.post("/products", payload);
+    }
 
     resetForm();
     showCreateForm.value = false;
     await loadProducts();
   } catch (error) {
-    errorMessage.value = error.response?.data?.msg || "商品创建失败";
+    errorMessage.value =
+      error.response?.data?.msg || (formMode.value === "edit" ? "商品更新失败" : "商品创建失败");
   } finally {
     saving.value = false;
+  }
+}
+
+async function deleteProduct(item) {
+  if (!window.confirm(`确认删除商品 ${item.hb_code} - ${item.name} 吗？`)) {
+    return;
+  }
+
+  deletingHbCode.value = item.hb_code;
+  errorMessage.value = "";
+
+  try {
+    await http.delete(`/products/${item.hb_code}`);
+    if (productForm.hb_code === item.hb_code) {
+      resetForm();
+      showCreateForm.value = false;
+    }
+    await loadProducts();
+  } catch (error) {
+    errorMessage.value = error.response?.data?.msg || "商品删除失败";
+  } finally {
+    deletingHbCode.value = "";
   }
 }
 
@@ -251,9 +324,9 @@ watch(
             v-if="isAdmin"
             type="button"
             class="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
-            @click="showCreateForm = !showCreateForm"
+            @click="showCreateForm ? (showCreateForm = false) : openCreateForm()"
           >
-            {{ showCreateForm ? "收起建档" : "新建商品" }}
+            {{ showCreateForm ? "收起档案表单" : "新建商品" }}
           </button>
           <button
             v-if="isAdmin"
@@ -303,6 +376,25 @@ watch(
             </select>
           </label>
 
+          <div class="rounded-[1.5rem] border border-brand/10 bg-brand-soft/30 p-4">
+            <p class="text-sm font-semibold text-slate-900">标准表头顺序</p>
+            <p class="mt-1 text-sm text-slate-600">
+              这份模板现在会严格按以下字段解析，并自动忽略后面纯空白的尾随列，避免 `unit` 后面的数据错位。
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span
+                v-for="header in PRODUCT_IMPORT_HEADERS"
+                :key="header"
+                class="rounded-full border border-white/80 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+              >
+                {{ header }}
+              </span>
+            </div>
+            <p class="mt-3 text-xs text-slate-500">
+              别名也支持：例如 `HB编码`、`商品名称`、`计量单位`、`最小单位`、`采购单位`、`换算率`、`extra_data(JSON)`。
+            </p>
+          </div>
+
           <div class="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
@@ -342,6 +434,30 @@ watch(
               已显示前 {{ importPreview.errors.length }} 条错误，请先修正表格再导入。
             </div>
 
+            <div
+              v-if="importPreview.column_mapping && Object.keys(importPreview.column_mapping).length"
+              class="rounded-3xl border border-slate-100 bg-white/80 p-4"
+            >
+              <p class="text-sm font-semibold text-slate-900">本次识别结果</p>
+              <div class="mt-3 grid gap-3 md:grid-cols-2">
+                <div
+                  v-for="header in PRODUCT_IMPORT_HEADERS"
+                  :key="`mapping-${header}`"
+                  class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-medium text-slate-800">{{ header }}</p>
+                    <span
+                      class="rounded-full px-3 py-1 text-xs font-semibold"
+                      :class="importPreview.column_mapping[header] ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                    >
+                      {{ importPreview.column_mapping[header] || "未识别" }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="overflow-x-auto">
               <table class="min-w-full text-left text-sm">
                 <thead class="text-xs uppercase tracking-[0.25em] text-slate-400">
@@ -372,8 +488,12 @@ watch(
     </article>
 
     <article v-if="showCreateForm && isAdmin" class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-      <h4 class="text-lg font-semibold text-slate-900">新建商品档案</h4>
-      <p class="mt-1 text-sm text-slate-500">品牌、产地、过敏原等扩展属性可直接写入 `extra_data` JSON。</p>
+      <h4 class="text-lg font-semibold text-slate-900">
+        {{ formMode === "edit" ? "编辑商品档案" : "新建商品档案" }}
+      </h4>
+      <p class="mt-1 text-sm text-slate-500">
+        品牌、产地、过敏原等扩展属性可直接写入 `extra_data` JSON。导入有误时，优先在这里直接修正主档。
+      </p>
 
       <form class="mt-5 space-y-4" @submit.prevent="createProduct">
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -383,8 +503,12 @@ watch(
               v-model="productForm.hb_code"
               type="text"
               required
+              :disabled="formMode === 'edit'"
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
             />
+            <p v-if="formMode === 'edit'" class="mt-2 text-xs text-slate-500">
+              为避免主键及关联记录漂移，编辑模式下不允许修改 HB 编码。
+            </p>
           </label>
           <label class="block">
             <span class="mb-2 block text-sm font-medium text-slate-700">条码</span>
@@ -472,7 +596,7 @@ watch(
             class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
             :disabled="saving"
           >
-            {{ saving ? "保存中..." : "保存档案" }}
+            {{ saving ? "保存中..." : formMode === "edit" ? "保存修改" : "保存档案" }}
           </button>
           <button
             type="button"
@@ -518,10 +642,10 @@ watch(
                 <td class="px-6 py-4">{{ item.name }}</td>
                 <td class="px-6 py-4">{{ item.spec }}</td>
                 <td class="px-6 py-4">{{ item.base_unit }} / {{ item.purchase_unit }}</td>
-                <td class="px-6 py-4">{{ item.sellable_stock }}</td>
+                <td class="px-6 py-4">{{ formatStock(item, "sellable_stock") }}</td>
                 <td class="px-6 py-4">
                   <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
-                    {{ item.total_stock }}
+                    {{ formatStock(item, "total_stock") }}
                   </span>
                 </td>
                 <td class="px-6 py-4">
@@ -542,12 +666,31 @@ watch(
                   <span v-else class="text-slate-400">-</span>
                 </td>
                 <td class="px-6 py-4">
-                  <RouterLink
-                    :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
-                    class="text-sm font-medium text-brand-dark hover:text-brand"
-                  >
-                    查看详情
-                  </RouterLink>
+                  <div class="flex items-center gap-3">
+                    <RouterLink
+                      :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
+                      class="text-sm font-medium text-brand-dark hover:text-brand"
+                    >
+                      查看详情
+                    </RouterLink>
+                    <button
+                      v-if="isAdmin"
+                      type="button"
+                      class="text-sm font-medium text-slate-700 hover:text-brand-dark"
+                      @click="openEditForm(item)"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      v-if="isAdmin"
+                      type="button"
+                      class="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
+                      :disabled="deletingHbCode === item.hb_code"
+                      @click="deleteProduct(item)"
+                    >
+                      {{ deletingHbCode === item.hb_code ? "删除中..." : "删除" }}
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -566,7 +709,7 @@ watch(
                 <p class="mt-1 text-xs text-slate-500">{{ item.hb_code }} · {{ item.barcode || "无条码" }}</p>
               </div>
               <span class="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
-                可售 {{ item.sellable_stock }}
+                可售 {{ formatStock(item, "sellable_stock") }}
               </span>
             </div>
             <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -580,7 +723,7 @@ watch(
               </div>
               <div>
                 <p class="text-slate-500">总库存</p>
-                <p class="font-medium text-slate-800">{{ item.total_stock }}</p>
+                <p class="font-medium text-slate-800">{{ formatStock(item, "total_stock") }}</p>
               </div>
               <div class="col-span-2">
                 <p class="text-slate-500">扩展字段</p>
@@ -603,12 +746,31 @@ watch(
                 </div>
               </div>
             </div>
-            <RouterLink
-              :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
-              class="mt-4 inline-flex text-sm font-medium text-brand-dark"
-            >
-              查看详情
-            </RouterLink>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <RouterLink
+                :to="{ name: 'product-detail', params: { hbCode: item.hb_code } }"
+                class="inline-flex text-sm font-medium text-brand-dark"
+              >
+                查看详情
+              </RouterLink>
+              <button
+                v-if="isAdmin"
+                type="button"
+                class="text-sm font-medium text-slate-700"
+                @click="openEditForm(item)"
+              >
+                编辑
+              </button>
+              <button
+                v-if="isAdmin"
+                type="button"
+                class="text-sm font-medium text-red-600 disabled:opacity-60"
+                :disabled="deletingHbCode === item.hb_code"
+                @click="deleteProduct(item)"
+              >
+                {{ deletingHbCode === item.hb_code ? "删除中..." : "删除" }}
+              </button>
+            </div>
           </article>
         </div>
       </div>
