@@ -28,7 +28,7 @@ const items = computed(() => {
     },
     {
       title: "批量订单导入",
-      desc: "先选渠道再导入模板，微信小店排在最上面，并可直接下载 CSV 示例。",
+      desc: "当前仅开放微信小店订单 CSV，入口内可直接选择渠道并下载示例。",
       to: "/orders-import",
       tag: "Web",
     },

@@ -2,44 +2,12 @@
 import { computed, ref, watch } from "vue";
 
 import http from "../api/http";
-
-const CHANNEL_OPTIONS = [
-  { value: "微信小店", label: "微信小店", template: "wechat_shop", hint: "优先匹配微信小店标准导出模板" },
-  { value: "抖音", label: "抖音", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "有赞", label: "有赞", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "淘宝", label: "淘宝", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "天猫", label: "天猫", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "京东", label: "京东", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "拼多多", label: "拼多多", template: "generic", hint: "适合整理后的通用订单表" },
-  { value: "菜鸟", label: "菜鸟", template: "cainiao", hint: "适合菜鸟类发货模板" },
-  { value: "顺丰", label: "顺丰", template: "shunfeng", hint: "适合顺丰类发货模板" },
-  { value: "__custom__", label: "其他渠道", template: "generic", hint: "当预设渠道不匹配时手工输入" },
-];
-
-const TEMPLATE_OPTIONS = [
-  { value: "wechat_shop", label: "微信小店" },
-  { value: "generic", label: "通用" },
-  { value: "cainiao", label: "菜鸟" },
-  { value: "shunfeng", label: "顺丰" },
-];
+import { getDefaultOrderChannel, SUPPORTED_ORDER_CHANNELS } from "../constants/orderChannels";
 
 const ORDER_TEMPLATE_DOCS = {
-  generic: {
-    label: "通用模板",
-    description: "适合你自己整理过的 CSV / Excel。至少要能映射出外部 SKU、数量，以及可选的订单号。",
-    requiredMappings: [
-      { key: "external_sku_id", label: "外部 SKU", suggestedHeaders: ["external_sku_id", "外部sku", "商品编码", "货号"] },
-      { key: "quantity", label: "数量", suggestedHeaders: ["quantity", "数量", "件数"] },
-    ],
-    optionalMappings: [
-      { key: "channel_name", label: "渠道", suggestedHeaders: ["channel_name", "渠道", "平台"] },
-      { key: "external_order_no", label: "订单号", suggestedHeaders: ["external_order_no", "订单号", "平台订单号"] },
-    ],
-    visibleHeaders: [],
-  },
   wechat_shop: {
     label: "微信小店",
-    description: "按你提供的标准导出表头建立。导入时优先用自定义 SKU / 商品编码做映射，其余 50+ 字段会原样保存在订单 extra_data.row_extra。",
+    description: "当前仅开放微信小店标准导出 CSV。导入时优先用自定义 SKU / 商品编码做映射，其余 50+ 字段会原样保存在订单 extra_data.row_extra。",
     requiredMappings: [
       { key: "external_order_no", label: "订单号", suggestedHeaders: ["订单号"] },
       { key: "external_sku_id", label: "商品编码 / SKU", suggestedHeaders: ["SKU编码(自定义)", "商品编码(自定义)"] },
@@ -58,32 +26,6 @@ const ORDER_TEMPLATE_DOCS = {
       "商品数量", "商品平台券优惠", "商品平均运费", "定制信息", "定制预览图", "商品发货", "商品售后", "商品已退款金额",
     ],
   },
-  cainiao: {
-    label: "菜鸟",
-    description: "适合菜鸟发货单类模板，通常需要手工确认 SKU 和数量列。",
-    requiredMappings: [
-      { key: "external_sku_id", label: "外部 SKU", suggestedHeaders: ["external_sku_id", "商品编码", "货号"] },
-      { key: "quantity", label: "数量", suggestedHeaders: ["quantity", "数量", "件数"] },
-    ],
-    optionalMappings: [
-      { key: "channel_name", label: "渠道", suggestedHeaders: ["渠道", "平台"] },
-      { key: "external_order_no", label: "订单号", suggestedHeaders: ["订单号", "平台订单号"] },
-    ],
-    visibleHeaders: [],
-  },
-  shunfeng: {
-    label: "顺丰",
-    description: "适合顺丰类发货模板，通常需要手工确认 SKU 和数量列。",
-    requiredMappings: [
-      { key: "external_sku_id", label: "外部 SKU", suggestedHeaders: ["external_sku_id", "商品编码", "货号"] },
-      { key: "quantity", label: "数量", suggestedHeaders: ["quantity", "数量", "件数"] },
-    ],
-    optionalMappings: [
-      { key: "channel_name", label: "渠道", suggestedHeaders: ["渠道", "平台"] },
-      { key: "external_order_no", label: "订单号", suggestedHeaders: ["订单号", "平台订单号"] },
-    ],
-    visibleHeaders: [],
-  },
 };
 
 const selectedFile = ref(null);
@@ -95,8 +37,7 @@ const validRows = ref(0);
 const errorRows = ref(0);
 const errors = ref([]);
 
-const selectedChannel = ref("微信小店");
-const customChannelName = ref("");
+const selectedChannel = ref(getDefaultOrderChannel());
 const templateName = ref("wechat_shop");
 
 const loadingPreview = ref(false);
@@ -105,24 +46,13 @@ const errorMessage = ref("");
 const successMessage = ref("");
 
 const hasPreview = computed(() => previewRows.value.length > 0 || errors.value.length > 0);
-const activeTemplateDoc = computed(() => ORDER_TEMPLATE_DOCS[templateName.value] || ORDER_TEMPLATE_DOCS.generic);
+const activeTemplateDoc = computed(() => ORDER_TEMPLATE_DOCS.wechat_shop);
 const activeChannelOption = computed(
-  () => CHANNEL_OPTIONS.find((item) => item.value === selectedChannel.value) || CHANNEL_OPTIONS[0],
+  () => SUPPORTED_ORDER_CHANNELS.find((item) => item.value === selectedChannel.value) || SUPPORTED_ORDER_CHANNELS[0],
 );
-const defaultChannelName = computed(() => {
-  if (selectedChannel.value === "__custom__") {
-    return customChannelName.value.trim();
-  }
-  return selectedChannel.value.trim();
-});
-const activeSampleHref = computed(() => (
-  templateName.value === "wechat_shop"
-    ? "/samples/orders-import-wechat-shop-sample.csv"
-    : "/samples/orders-import-generic-sample.csv"
-));
-const activeSampleLabel = computed(() => (
-  templateName.value === "wechat_shop" ? "下载微信小店 CSV 示例" : "下载通用订单 CSV 示例"
-));
+const defaultChannelName = computed(() => selectedChannel.value.trim());
+const activeSampleHref = computed(() => "/samples/orders-import-wechat-shop-sample.csv");
+const activeSampleLabel = computed(() => "下载微信小店 CSV 示例");
 const mappingStatusRows = computed(() => {
   const template = activeTemplateDoc.value;
   return [...template.requiredMappings, ...template.optionalMappings].map((item) => ({
@@ -135,14 +65,11 @@ const mappingStatusRows = computed(() => {
 });
 
 watch(selectedChannel, (value) => {
-  const matched = CHANNEL_OPTIONS.find((item) => item.value === value);
+  const matched = SUPPORTED_ORDER_CHANNELS.find((item) => item.value === value);
   if (!matched) {
     return;
   }
-  templateName.value = matched.template;
-  if (value !== "__custom__") {
-    customChannelName.value = "";
-  }
+  templateName.value = matched.importTemplate;
 });
 
 function onFileChange(event) {
@@ -241,7 +168,7 @@ async function commitImport() {
       <p class="text-xs uppercase tracking-[0.35em] text-brand/60">Orders Import</p>
       <h3 class="mt-2 text-2xl font-semibold text-slate-900">批量订单导入</h3>
       <p class="mt-2 text-sm text-slate-500">
-        支持 CSV / Excel。通过映射适配微信小店、菜鸟、顺丰等模板，未映射列会写入订单 extra_data，便于未来对接物流商 API。
+        当前只显示已支持的订单 CSV。现在开放的是微信小店标准导出模板，未映射列会写入订单 extra_data，便于未来对接物流商 API。
       </p>
     </div>
 
@@ -258,42 +185,27 @@ async function commitImport() {
                 class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
               >
                 <option
-                  v-for="option in CHANNEL_OPTIONS"
+                  v-for="option in SUPPORTED_ORDER_CHANNELS"
                   :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
                 </option>
               </select>
-              <p class="mt-2 text-xs text-slate-500">{{ activeChannelOption.hint }}</p>
+              <p class="mt-2 text-xs text-slate-500">{{ activeChannelOption.importHint }}</p>
             </label>
             <label class="block">
               <span class="mb-2 block text-sm font-medium text-slate-700">模板标识</span>
               <select
                 v-model="templateName"
                 class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
+                disabled
               >
-                <option
-                  v-for="option in TEMPLATE_OPTIONS"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
+                <option value="wechat_shop">微信小店</option>
               </select>
-              <p class="mt-2 text-xs text-slate-500">渠道会自动推荐模板；如表头已整理，也可以手工切换。</p>
+              <p class="mt-2 text-xs text-slate-500">当前只开放已验证的微信小店 CSV 模板。</p>
             </label>
           </div>
-
-          <label v-if="selectedChannel === '__custom__'" class="block">
-            <span class="mb-2 block text-sm font-medium text-slate-700">自定义渠道名称</span>
-            <input
-              v-model="customChannelName"
-              type="text"
-              class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
-              placeholder="例如 视频号 / 线下门店"
-            />
-          </label>
 
           <label class="block">
             <span class="mb-2 block text-sm font-medium text-slate-700">文件</span>

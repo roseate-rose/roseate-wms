@@ -57,6 +57,22 @@
 ### Verification
 - `npm --prefix frontend run build`
 
+# Orders Supported Channels Todo
+
+## Scope
+- [x] Change the order page channel field from free text to fixed options
+- [x] Restrict the orders-import page to currently supported CSV types only
+- [x] Keep the currently supported path explicit as `微信小店`
+- [x] Verify the frontend build and sync docs
+
+## Review / Summary
+- [x] Manual order-sync now uses channel options instead of typing
+- [x] Unsupported order CSV templates are no longer shown in the import UI
+- [x] WeChat Shop remains the visible supported import path
+
+### Verification
+- `npm --prefix frontend run build`
+
 # WebTest Handoff Protocol Todo
 
 ## Scope

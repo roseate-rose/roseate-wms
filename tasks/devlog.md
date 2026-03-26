@@ -1,5 +1,10 @@
 # Dev Log
 
+## 2026-03-26 Orders Channel Options + Supported CSV Narrowing
+- Why: The user asked to make the order page channel field a controlled option list and to show only the order CSV types that are actually supported right now. At the moment, the supported import path is WeChat Shop only, so continuing to show generic / Cainiao / SF options creates false affordances.
+- How: Added `frontend/src/constants/orderChannels.js` as the frontend source of truth for supported order channels. Updated `frontend/src/views/OrdersView.vue` so the manual order-sync form uses a channel `<select>` instead of free text. Updated `frontend/src/views/OrdersImportView.vue` to narrow the import UX to the supported WeChat Shop path only: the channel selector now only exposes `微信小店`, the template selector is locked to `wechat_shop`, and page copy now states that only supported CSV types are shown. Updated `frontend/src/views/OtherView.vue` and `README.md` to match the narrowed support statement.
+- Result: The order workflow now presents channel values as options instead of free text, and the import page no longer implies support for unsupported CSV templates. `npm --prefix frontend run build` passed.
+
 ## 2026-03-26 Orders Import Channel Selector + CSV Samples
 - Why: The order-import entry still relied on a free-text channel field, which forced operators to remember channel names and increased the chance of mismatched defaults. The user asked for a more explicit workflow where channel is chosen from a list, WeChat Shop appears first, and a CSV sample is available directly from the page.
 - How: Updated `frontend/src/views/OrdersImportView.vue` to replace the free-text default-channel input with a preset selector headed by `微信小店`, added automatic template recommendation based on the selected channel, preserved a custom-channel fallback, and exposed a sample-download action tied to the active template. Added downloadable sample files under `frontend/public/samples/` for both generic and WeChat Shop order imports. Updated `frontend/src/views/OtherView.vue` so the order-import entry advertises the new guided workflow.

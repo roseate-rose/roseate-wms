@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 
 import http from "../api/http";
+import { getDefaultOrderChannel, SUPPORTED_ORDER_CHANNELS } from "../constants/orderChannels";
 import { formatBoundQuantity } from "../utils/quantity";
 
 const loading = ref(false);
@@ -11,7 +12,7 @@ const successMessage = ref("");
 const orders = ref([]);
 
 const orderForm = reactive({
-  channel_name: "抖音",
+  channel_name: getDefaultOrderChannel(),
   external_sku_id: "",
   quantity: 1,
 });
@@ -73,21 +74,32 @@ onMounted(loadOrders);
     <div class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
       <p class="text-xs uppercase tracking-[0.35em] text-brand/60">Orders</p>
       <h3 class="mt-2 text-2xl font-semibold text-slate-900">渠道订单列表</h3>
-      <p class="mt-2 text-sm text-slate-500">从外部 SKU 映射到内部商品后执行库存预占，并在发货时转为实际 OUT 流水。</p>
+      <p class="mt-2 text-sm text-slate-500">从外部 SKU 映射到内部商品后执行库存预占，并在发货时转为实际 OUT 流水。当前订单渠道入口按已支持渠道显示。</p>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
       <article class="rounded-[2rem] bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
         <h4 class="text-lg font-semibold text-slate-900">模拟订单同步</h4>
+        <p class="mt-1 text-sm text-slate-500">渠道改为固定选项，避免手输名称与渠道映射不一致。</p>
 
         <form class="mt-5 space-y-4" @submit.prevent="syncOrder">
           <label class="block">
             <span class="mb-2 block text-sm font-medium text-slate-700">渠道</span>
-            <input
+            <select
               v-model="orderForm.channel_name"
-              type="text"
               class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand"
-            />
+            >
+              <option
+                v-for="channel in SUPPORTED_ORDER_CHANNELS"
+                :key="channel.value"
+                :value="channel.value"
+              >
+                {{ channel.label }}
+              </option>
+            </select>
+            <p class="mt-2 text-xs text-slate-500">
+              {{ SUPPORTED_ORDER_CHANNELS.find((channel) => channel.value === orderForm.channel_name)?.importHint }}
+            </p>
           </label>
 
           <label class="block">
